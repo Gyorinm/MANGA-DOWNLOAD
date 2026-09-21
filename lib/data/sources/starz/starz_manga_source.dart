@@ -36,15 +36,24 @@ class StarzMangaSource implements MangaSource {
 
     final encoded = Uri.encodeQueryComponent(text);
     final pageNumber = page < 1 ? 1 : page;
-    final url = '$_base/?s=$encoded&post_type=wp-manga&paged=$pageNumber';
-    try {
-      final document = await _document(url);
-      final results = _parseMangaGrid(document);
-      if (results.isNotEmpty) return results;
-    } catch (_) {
-      // Some requests may be blocked by the site's anti-bot/ad layer.
-      // Exact-title lookup above remains available.
+
+    final urls = <String>[
+      '$_base/?s=$encoded&post_type=wp-manga&paged=$pageNumber',
+      '$_base/?s=$encoded&post_type=wp-manga',
+      '$_base/manga/?s=$encoded',
+    ];
+
+    for (final url in urls) {
+      try {
+        final document = await _document(url);
+        final results = _parseMangaGrid(document);
+        if (results.isNotEmpty) return results;
+      } catch (_) {
+        // Try the next public search form used by the site.
+      }
     }
+
+    return const <Manga>[];
     return const <Manga>[];
   }
 
@@ -104,36 +113,35 @@ class StarzMangaSource implements MangaSource {
     final chapters = <Chapter>[];
     final seen = <String>{};
 
-    void addChapter({
-      required String href,
-      required String text,
-    }) {
-      final absolute = absoluteUrl(url, href);
-      if (absolute.isEmpty || !seen.add(absolute)) return;
+    for (final link in document.querySelectorAll('a[href]')) {
+      final href = absoluteUrl(url, link.attributes['href'] ?? '');
+      if (href.isEmpty || !seen.add(href)) continue;
 
-      final number = firstChapterNumber(text) ?? chapterNumberFromUrl(absolute);
-      if (number == null || number.isEmpty) return;
+      final uri = Uri.tryParse(href);
+      if (uri == null || uri.host != Uri.parse(_base).host) continue;
+
+      final parts = uri.pathSegments.where((part) => part.isNotEmpty).toList();
+      if (parts.length < 3 ||
+          parts[0] != 'manga' ||
+          parts[1] != remoteId) {
+        continue;
+      }
+
+      final number =
+          firstChapterNumber(link.text) ??
+          (RegExp(r'^(\\d+(?:[.][\\d]+)?)$').firstMatch(parts.last)?.group(1)) ??
+          chapterNumberFromUrl(href);
+      if (number == null || number.isEmpty) continue;
 
       chapters.add(
         Chapter(
           mangaKey: '$id::$remoteId',
-          remoteId: absolute,
+          remoteId: href,
           number: number,
-          title: _chapterTitle(text, number),
+          title: _chapterTitle(cleanText(link.text), number),
           language: language,
           sortIndex: 0,
         ),
-      );
-    }
-
-    for (final li in document.querySelectorAll(
-      '.listing-chapters_wrap li, li.wp-manga-chapter',
-    )) {
-      final link = li.querySelector('a[href]');
-      if (link == null) continue;
-      addChapter(
-        href: link.attributes['href'] ?? '',
-        text: cleanText(link.text),
       );
     }
 
@@ -165,11 +173,15 @@ class StarzMangaSource implements MangaSource {
     final document = await _document(chapterRemoteId);
     final urls = <String>[];
 
-    for (final image in document.querySelectorAll(
-      '.reading-content img, .page-break img',
-    )) {
+    for (final image in document.querySelectorAll('img')) {
       final src = imageUrl(chapterRemoteId, image);
       if (src.isEmpty || src.startsWith('data:')) continue;
+
+      final uri = Uri.tryParse(src);
+      if (uri == null) continue;
+      if (!uri.host.endsWith('.starzmanga.com')) continue;
+      if (!uri.path.contains('/manga/')) continue;
+
       if (!urls.contains(src)) urls.add(src);
     }
 
@@ -207,31 +219,29 @@ class StarzMangaSource implements MangaSource {
     final results = <Manga>[];
     final seen = <String>{};
 
-    for (final card in document.querySelectorAll(
-      'div.page-item-detail.manga, div.c-tabs-item__content, div.row.c-tabs-item__content, div.c-image-hover',
-    )) {
-      final link = card.querySelector(
-        '.post-title a[href], .item-thumb a[href], a[href*="/manga/"]',
-      );
-      if (link == null) continue;
-
+    // Madara's card classes vary between pages; manga URLs are stable.
+    for (final link in document.querySelectorAll('a[href]')) {
       final href = absoluteUrl(_base, link.attributes['href'] ?? '');
       if (href.isEmpty) continue;
 
-      final slug = _slugFromUrl(href);
+      final uri = Uri.tryParse(href);
+      if (uri == null || uri.host != Uri.parse(_base).host) continue;
+
+      final parts = uri.pathSegments.where((part) => part.isNotEmpty).toList();
+      final index = parts.indexOf('manga');
+      if (index < 0 || index + 1 >= parts.length) continue;
+
+      final slug = parts[index + 1];
       if (slug.isEmpty || !seen.add(slug)) continue;
 
       final title = cleanText(
-        card.querySelector('.post-title a, h3 a, [class*="post-title"] a')?.text ??
-            link.attributes['title'] ??
-            slug,
+        link.text.isNotEmpty
+            ? link.text
+            : (link.attributes['title'] ?? link.attributes['aria-label'] ?? slug),
       );
       if (title.isEmpty) continue;
 
-      final cover = imageUrl(
-        _base,
-        card.querySelector('.item-thumb img, img.img-responsive, img'),
-      );
+      final cover = imageUrl(_base, link.parent?.querySelector('img'));
 
       results.add(
         Manga(
