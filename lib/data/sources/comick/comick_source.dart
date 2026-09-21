@@ -52,7 +52,7 @@ class ComicKSource implements MangaSource {
 
   @override
   Future<Manga> details(String remoteId) async {
-    final raw = await _get('/comic/$remoteId');
+    final raw = await _get('/comic/$remoteId', const {});
     final data = _unwrapMap(raw, 'comic');
 
     final title = (data['title'] as String?)?.trim();
@@ -147,7 +147,7 @@ class ComicKSource implements MangaSource {
 
   @override
   Future<List<String>> pageUrls(String chapterRemoteId) async {
-    final raw = await _get('/chapter/$chapterRemoteId');
+    final raw = await _get('/chapter/$chapterRemoteId', const {});
     final data = _unwrapMap(raw, 'chapter');
     final images = (data['md_images'] as List?) ?? const [];
 
