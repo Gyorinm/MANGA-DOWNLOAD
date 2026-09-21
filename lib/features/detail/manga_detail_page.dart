@@ -100,11 +100,7 @@ class _Body extends ConsumerWidget {
         OutlinedButton(
           onPressed: chapters.isEmpty
               ? null
-              : () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => ChaptersPage(manga: manga),
-                    ),
-                  ),
+              : () => _openChapterPicker(context, ref),
           style: OutlinedButton.styleFrom(
             minimumSize: const Size.fromHeight(48),
             foregroundColor: AppTheme.textPrimary,
@@ -122,6 +118,20 @@ class _Body extends ConsumerWidget {
               style: Theme.of(context).textTheme.bodyMedium),
         ],
       ],
+    );
+  }
+
+  Future<void> _openChapterPicker(BuildContext context, WidgetRef ref) async {
+    // ChaptersPage تقرأ من قاعدة البيانات المحلية حتى تستطيع تحديث حالة
+    // الفصل وإعادة المحاولة. نتيجة البحث ليست محفوظة بعد، لذلك كان زر
+    // «اختيار فصول محددة» يفتح قائمة فارغة سابقًا.
+    final saved = await ref.read(libraryRepositoryProvider).addToLibrary(
+          manga,
+          chapters,
+        );
+    if (!context.mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => ChaptersPage(manga: saved)),
     );
   }
 
