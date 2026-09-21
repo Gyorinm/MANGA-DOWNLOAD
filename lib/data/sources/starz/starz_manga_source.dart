@@ -1,12 +1,12 @@
 import 'package:dio/dio.dart';
 import 'package:html/parser.dart' as html_parser;
 
-import '../../../core/http/http_client.dart';
-import '../../../core/utils/result.dart';
-import '../../../domain/entities/chapter.dart';
-import '../../../domain/entities/manga.dart';
-import '../manga_source.dart';
-import '../html_source_utils.dart';
+import 'package:maktaba/core/http/http_client.dart';
+import 'package:maktaba/core/utils/result.dart';
+import 'package:maktaba/domain/entities/chapter.dart';
+import 'package:maktaba/domain/entities/manga.dart';
+import 'package:maktaba/data/sources/manga_source.dart';
+import 'package:maktaba/data/sources/html_source_utils.dart';
 
 class StarzMangaSource implements MangaSource {
   StarzMangaSource(this._http);
