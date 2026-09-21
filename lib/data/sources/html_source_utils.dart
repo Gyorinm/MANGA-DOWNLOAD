@@ -1,6 +1,6 @@
 import 'package:html/dom.dart';
 
-/// Helpers مشتركة لمصادر المواقع التي تعتمد HTML.
+/// أدوات مشتركة للمصادر التي تعتمد على صفحات HTML.
 String absoluteUrl(String baseUrl, String raw) {
   final value = raw.trim();
   if (value.isEmpty || value.startsWith('data:')) return '';
@@ -28,10 +28,11 @@ String imageUrl(
   return '';
 }
 
-String cleanText(String value) => value.replaceAll(RegExp(r'\\s+'), ' ').trim();
+String cleanText(String value) => value.replaceAll(RegExp(r'\s+'), ' ').trim();
 
 String? firstChapterNumber(String text) {
-  final match = RegExp(r'(?:الفصل\\s*)?([0-9]+(?:[.][0-9]+)?)').firstMatch(text);
+  final match =
+      RegExp(r'(?:الفصل\s*)?([0-9]+(?:[.][0-9]+)?)').firstMatch(text);
   return match?.group(1);
 }
 
@@ -49,13 +50,19 @@ bool looksPaid(Element chapter) =>
 
 String detectStatus(String text) {
   final value = text.toLowerCase();
-  if (value.contains('مستمرة') || value.contains('مستمر') || value.contains('ongoing')) {
+  if (value.contains('مستمرة') ||
+      value.contains('مستمر') ||
+      value.contains('ongoing')) {
     return 'مستمرة';
   }
-  if (value.contains('مكتملة') || value.contains('مكتمل') || value.contains('completed')) {
+  if (value.contains('مكتملة') ||
+      value.contains('مكتمل') ||
+      value.contains('completed')) {
     return 'مكتملة';
   }
-  if (value.contains('متوقف') || value.contains('متوقّف') || value.contains('hiatus')) {
+  if (value.contains('متوقف') ||
+      value.contains('متوقّف') ||
+      value.contains('hiatus')) {
     return 'متوقفة';
   }
   return '';
