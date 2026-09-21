@@ -28,6 +28,9 @@ jobs:
       - name: Generate Android platform files
         run: flutter create --platforms=android --project-name maktaba --org com.maktaba .
 
+      - name: Remove the default counter test (this app has no MyApp)
+        run: rm -f test/widget_test.dart
+
       - name: Allow internet access in release builds
         run: |
           f=android/app/src/main/AndroidManifest.xml

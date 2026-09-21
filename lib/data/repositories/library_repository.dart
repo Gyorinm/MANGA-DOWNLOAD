@@ -78,7 +78,7 @@ class LibraryRepository {
       final fresh = await source.chapters(manga.remoteId);
       if (await _dao.findManga(manga.key) != null) {
         await _dao.mergeChapters(manga.key, fresh);
-        return _dao.chaptersOf(manga.key);
+        return await _dao.chaptersOf(manga.key);
       }
       return fresh;
     } catch (_) {

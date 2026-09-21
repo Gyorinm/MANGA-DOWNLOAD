@@ -28,6 +28,9 @@ class MangaDexSource implements MangaSource {
   List<String> get languages => const ['ar', 'en'];
 
   @override
+  Map<String, String> get imageHeaders => const {};
+
+  @override
   Future<List<Manga>> search(String query, {int page = 1}) async {
     const limit = 20;
     final json = await _get('$_api/manga', {
