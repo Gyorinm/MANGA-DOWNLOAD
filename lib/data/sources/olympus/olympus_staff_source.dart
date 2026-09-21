@@ -36,7 +36,12 @@ class OlympusStaffSource implements MangaSource {
     final url =
         '$_base/?search=$encoded&page=' + safePage.toString();
     final document = await _document(url);
-    return _parseMangaGrid(document);
+    final results = _parseMangaGrid(document);
+    if (results.isNotEmpty) return results;
+
+    // Fallback when the search result cards are not present in server HTML.
+    final direct = await _directSlugSearch(query.trim());
+    return direct == null ? const <Manga>[] : <Manga>[direct];
   }
 
   @override
@@ -286,6 +291,78 @@ class OlympusStaffSource implements MangaSource {
 
     return results;
   }
+
+  Future<Manga?> _directSlugSearch(String query) async {
+    final slug = _slugify(query);
+    if (slug.isEmpty) return null;
+    try {
+      final document = await _document('$_base/series/$slug');
+      final title = cleanText(
+        document.querySelector('h1, .author-info-title h6, .title')?.text ?? '',
+      );
+      if (title.isEmpty ||
+          document.querySelector('.chapter-card, .enhanced-chapters-section') == null) {
+        return null;
+      }
+      final cover = imageUrl(
+        _base,
+        document.querySelector('img[alt="Manga Image"], img.shadow-sm, .text-right img'),
+      );
+      return Manga(
+        sourceId: id,
+        remoteId: slug,
+        title: title,
+        remoteCoverUrl: cover.isEmpty ? null : cover,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _slugify(String value) => value
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+      .replaceAll(RegExp(r'^-+|-+
+    final uri = Uri.tryParse(url);
+    if (uri == null) return '';
+    final parts = uri.pathSegments.where((part) => part.isNotEmpty).toList();
+    final index = parts.indexOf('series');
+    if (index >= 0 && index + 1 < parts.length) return parts[index + 1];
+    return '';
+  }
+
+  int _maxPage(dynamic document) {
+    final values = document
+        .querySelectorAll('ul.pagination a.page-link, .pagination a')
+        .map((a) => int.tryParse(cleanText(a.text)))
+        .whereType<int>()
+        .toList();
+    return values.isEmpty ? 1 : values.reduce((a, b) => a > b ? a : b);
+  }
+
+  String _fullInfoValue(dynamic document, String label) {
+    for (final info in document.querySelectorAll('.full-list-info')) {
+      final text = info.querySelector('small')?.text ?? '';
+      if (text.contains(label)) {
+        final values = info.querySelectorAll('small');
+        if (values.length > 1) return cleanText(values[1].text);
+      }
+    }
+    return '';
+  }
+
+  String _chapterTitle(String text, String number) {
+    final cleaned = text
+        .replaceFirst(
+          RegExp('^الفصل\\\\s*' + RegExp.escape(number) + '\\\\s*[:.\\\\-]?\\\\s*'),
+          '',
+        )
+        .trim();
+    return cleaned;
+  }
+}
+), '');
 
   String _slugFromUrl(String url) {
     final uri = Uri.tryParse(url);
