@@ -9,6 +9,7 @@ import '../../domain/entities/manga.dart';
 import '../../providers.dart';
 import '../detail/manga_detail_page.dart';
 import '../shared/widgets.dart';
+import '../sources/sources_page.dart';
 
 /// البحث: استعلام واحد يُرسل إلى كل المصادر، والنتائج مجمّعة تحت اسم كل موقع.
 class SearchPage extends ConsumerStatefulWidget {
@@ -44,6 +45,15 @@ class _SearchPageState extends ConsumerState<SearchPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('بحث'),
+        actions: [
+          IconButton(
+            tooltip: 'اختيار المصادر',
+            icon: const Icon(Icons.tune),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SourcesPage()),
+            ),
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(66),
           child: Padding(

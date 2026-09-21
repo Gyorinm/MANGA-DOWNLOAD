@@ -1,12 +1,15 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/http/http_client.dart';
 import 'core/storage/file_storage.dart';
 import 'data/local/app_database.dart';
 import 'data/local/library_dao.dart';
 import 'data/repositories/library_repository.dart';
+import 'data/sources/demo/demo_source.dart';
 import 'data/sources/mangadex/mangadex_source.dart';
 import 'data/sources/source_registry.dart';
+import 'data/sources/source_settings.dart';
 import 'domain/entities/chapter.dart';
 import 'domain/entities/manga.dart';
 import 'download/download_manager.dart';
@@ -32,6 +35,10 @@ final databaseProvider = Provider<AppDatabase>(
   (ref) => throw UnimplementedError('يُحقن في main()'),
 );
 
+final sharedPreferencesProvider = Provider<SharedPreferences>(
+  (ref) => throw UnimplementedError('يُحقن في main()'),
+);
+
 final daoProvider = Provider<LibraryDao>(
   (ref) => LibraryDao(ref.watch(databaseProvider)),
 );
@@ -40,8 +47,19 @@ final sourceRegistryProvider = Provider<SourceRegistry>((ref) {
   final http = ref.watch(httpClientProvider);
   return SourceRegistry([
     MangaDexSource(http),
-    // أضف المصادر الأخرى هنا.
+    DemoSource(),
+    // أضف المصادر الجديدة هنا؛ تظهر تلقائيًا في شاشة «مصادر التحميل» والبحث.
   ]);
+});
+
+/// المصادر التي فعّلها المستخدم. البحث والواجهة يقرآن منها.
+final enabledSourcesProvider =
+    StateNotifierProvider<SourceSettingsNotifier, Set<String>>((ref) {
+  final registry = ref.watch(sourceRegistryProvider);
+  return SourceSettingsNotifier(
+    ref.watch(sharedPreferencesProvider),
+    registry.all.map((s) => s.id).toSet(),
+  );
 });
 
 final libraryRepositoryProvider = Provider<LibraryRepository>((ref) {
@@ -83,7 +101,11 @@ final searchQueryProvider = StateProvider<String>((_) => '');
 final searchResultsProvider =
     FutureProvider.family<List<SourceResults>, String>((ref, query) {
   if (query.trim().length < 2) return Future.value(const []);
-  return ref.watch(libraryRepositoryProvider).searchAll(query.trim());
+  // مراقبة الاختيار تعيد البحث تلقائيًا عند تفعيل مصدر أو تعطيله.
+  final enabled = ref.watch(enabledSourcesProvider);
+  return ref
+      .watch(libraryRepositoryProvider)
+      .searchAll(query.trim(), sourceIds: enabled);
 });
 
 final mangaChaptersProvider =

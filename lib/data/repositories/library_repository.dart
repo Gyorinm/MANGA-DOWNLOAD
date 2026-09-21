@@ -33,9 +33,13 @@ class LibraryRepository {
 
   // ── بحث عبر كل المصادر ────────────────────────────────────────────────
 
-  /// يبحث في كل المصادر بالتوازي. فشل مصدر لا يُسقط البقية.
-  Future<List<SourceResults>> searchAll(String query) async {
-    final futures = _registry.all.map((source) async {
+  /// يبحث في المصادر المختارة بالتوازي ([sourceIds]، وnull تعني الكل).
+  /// فشل مصدر لا يُسقط البقية.
+  Future<List<SourceResults>> searchAll(String query,
+      {Set<String>? sourceIds}) async {
+    final selected = _registry.all
+        .where((s) => sourceIds == null || sourceIds.contains(s.id));
+    final futures = selected.map((source) async {
       try {
         final results = await source.search(query);
         return SourceResults(

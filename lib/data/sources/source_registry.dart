@@ -1,8 +1,9 @@
 import 'manga_source.dart';
 
-/// المكان الوحيد الذي تُسجَّل فيه المصادر.
+/// حاوية المصادر المتاحة، تُبنى في `providers.dart` (sourceRegistryProvider).
 ///
-/// أضف مصدرًا جديدًا هنا فقط؛ لا تُعدّل أي شاشة أو مدير تحميل.
+/// أضف المصدر الجديد إلى تلك القائمة فقط؛ لا تُعدّل أي شاشة أو مدير تحميل.
+/// أما المفعَّل منها فيحدده المستخدم من شاشة «مصادر التحميل».
 class SourceRegistry {
   SourceRegistry(List<MangaSource> sources)
       : _byId = {for (final s in sources) s.id: s};

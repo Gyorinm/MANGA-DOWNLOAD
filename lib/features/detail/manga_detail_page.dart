@@ -66,6 +66,14 @@ class _Body extends ConsumerWidget {
                   Text(manga.title,
                       style: Theme.of(context).textTheme.titleLarge),
                   const SizedBox(height: 8),
+                  _MetaLine(
+                    label: 'المصدر',
+                    value: ref
+                            .watch(sourceRegistryProvider)
+                            .byId(manga.sourceId)
+                            ?.displayName ??
+                        manga.sourceId,
+                  ),
                   if (manga.author.isNotEmpty)
                     _MetaLine(label: 'المؤلف', value: manga.author),
                   if (manga.status.isNotEmpty)
