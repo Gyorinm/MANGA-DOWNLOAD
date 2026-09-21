@@ -22,18 +22,20 @@ class SourceSettingsNotifier extends StateNotifier<Set<String>> {
     final savedEnabled = prefs.getStringList(_enabledKey);
     if (savedEnabled != null) {
       final enabled = savedEnabled.toSet()..retainAll(allIds);
-      return enabled.isEmpty ? {allIds.first} : enabled;
+      return enabled.isEmpty ? allIds : enabled;
     }
 
     // ترحيل اختيار النسخة السابقة بدل تجاهله.
     final savedDisabled = prefs.getStringList(_legacyDisabledKey);
     if (savedDisabled != null) {
       final enabled = allIds.difference(savedDisabled.toSet());
-      return enabled.isEmpty ? {allIds.first} : enabled;
+      return enabled.isEmpty ? allIds : enabled;
     }
 
-    // عند التثبيت الجديد يبدأ التطبيق بمصدر واحد، ويمكن للمستخدم إضافة البقية.
-    return {allIds.first};
+    // عند التثبيت الجديد يبدأ التطبيق بجميع المواقع مفعّلة، لأن التطبيق
+    // مصمّم للبحث عبر كل المصادر في نفس الوقت. هذا يمنع «الظهور في موقع واحد فقط»
+    // عند أول تشغيل ويبقي للمستخدم حرية إيقاف أي موقع لاحقًا.
+    return allIds;
   }
 
   bool isEnabled(String id) => state.contains(id);
