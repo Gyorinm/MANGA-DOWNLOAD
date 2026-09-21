@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// تتم المحافظة على الاختيار القديم عند أول تشغيل بعد التحديث.
 class SourceSettingsNotifier extends StateNotifier<Set<String>> {
   SourceSettingsNotifier(this._prefs, this._allIds)
-      : state = _load(_prefs, _allIds);
+      : super(_load(_prefs, _allIds));
 
   static const _enabledKey = 'enabled_sources';
   static const _legacyDisabledKey = 'disabled_sources';
