@@ -6,6 +6,7 @@ import '../../domain/entities/chapter.dart';
 import '../../domain/entities/manga.dart';
 import '../../providers.dart';
 import '../reader/reader_page.dart';
+import '../shared/delete_manga.dart';
 import '../shared/widgets.dart';
 
 /// قائمة الفصول: تعمل من قاعدة البيانات المحلية، فتظهر كاملة دون إنترنت.
@@ -25,7 +26,10 @@ class ChaptersPage extends ConsumerWidget {
           IconButton(
             tooltip: 'حذف المانهوا من الجهاز',
             icon: const Icon(Icons.delete_outline),
-            onPressed: () => _confirmDelete(context, ref),
+            onPressed: () async {
+              final deleted = await confirmAndDeleteManga(context, ref, manga);
+              if (deleted && context.mounted) Navigator.of(context).pop();
+            },
           ),
         ],
       ),
@@ -47,34 +51,6 @@ class ChaptersPage extends ConsumerWidget {
         },
       ),
     );
-  }
-
-  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppTheme.surface,
-        title: const Text('حذف من الجهاز'),
-        content: const Text(
-          'ستُحذف كل الفصول والصور المحمّلة. يمكنك تنزيلها لاحقًا من جديد.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('تراجع'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('حذف'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed != true) return;
-    ref.read(downloadManagerProvider).cancelManga(manga.key);
-    await ref.read(libraryRepositoryProvider).removeManga(manga.key);
-    if (context.mounted) Navigator.of(context).pop();
   }
 }
 
@@ -108,7 +84,7 @@ class _ChapterTile extends ConsumerWidget {
                 style: const TextStyle(fontSize: 12, color: AppTheme.textMuted),
               ),
       ),
-      trailing: _trailing(ref),
+      trailing: _trailing(context, ref),
       onTap: chapter.isReadable
           ? () => Navigator.of(context).push(
                 MaterialPageRoute(
@@ -119,10 +95,22 @@ class _ChapterTile extends ConsumerWidget {
     );
   }
 
-  Widget _trailing(WidgetRef ref) {
+  Widget _trailing(BuildContext context, WidgetRef ref) {
     return switch (chapter.status) {
-      ChapterStatus.downloaded =>
-        const Icon(Icons.check_circle, color: AppTheme.accent, size: 20),
+      ChapterStatus.downloaded => IconButton(
+          icon: const Icon(Icons.delete_outline, size: 20),
+          tooltip: 'حذف هذا الفصل من الجهاز',
+          onPressed: () async {
+            final ok = await confirmDialog(
+              context,
+              title: 'حذف ${chapter.displayName}',
+              body: 'تُحذف صور هذا الفصل من الجهاز، ويمكنك تنزيله من جديد.',
+            );
+            if (ok) {
+              await ref.read(libraryRepositoryProvider).removeChapterFiles(chapter);
+            }
+          },
+        ),
       ChapterStatus.downloading || ChapterStatus.queued => IconButton(
           icon: const Icon(Icons.close, size: 20),
           tooltip: 'إلغاء',

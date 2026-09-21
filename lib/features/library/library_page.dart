@@ -5,6 +5,7 @@ import '../../app/theme.dart';
 import '../../domain/entities/manga.dart';
 import '../../providers.dart';
 import '../chapters/chapters_page.dart';
+import '../shared/delete_manga.dart';
 import '../shared/widgets.dart';
 
 /// الرئيسية: أغلفة ما نزّله المستخدم. تعمل دون إنترنت بالكامل.
@@ -73,6 +74,7 @@ class _LibraryTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return InkWell(
       borderRadius: BorderRadius.circular(10),
+      onLongPress: () => confirmAndDeleteManga(context, ref, manga),
       onTap: () async {
         await ref.read(libraryRepositoryProvider).markOpened(manga.key);
         if (!context.mounted) return;
