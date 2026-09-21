@@ -101,32 +101,36 @@ class OlympusStaffSource implements MangaSource {
       dynamic document,
       int fallbackIndex,
     ) async {
-      for (final card in document.querySelectorAll(
-        '.chapter-card[data-number], .chapter-card',
-      )) {
-        final link = card.querySelector(
-          'a.chapter-link[href], a[href*="/series/$remoteId/"], a[href]',
-        );
-        if (link == null) continue;
-
+      // Olympus currently exposes chapter links as /series/<id>/<number>.
+      // Do not depend on page-specific CSS classes; inspect all public links.
+      for (final link in document.querySelectorAll('a[href]')) {
         final href = absoluteUrl(
           firstUrl,
           link.attributes['href'] ?? '',
         );
-        if (href.isEmpty || !href.contains('/series/$remoteId/')) continue;
+        if (href.isEmpty || href == firstUrl) continue;
+
+        final uri = Uri.tryParse(href);
+        if (uri == null || uri.host != Uri.parse(_base).host) continue;
+
+        final parts = uri.pathSegments.where((part) => part.isNotEmpty).toList();
+        if (parts.length < 3 ||
+            parts[0] != 'series' ||
+            parts[1] != remoteId) {
+          continue;
+        }
 
         final number =
-            (card.attributes['data-number']?.trim().isNotEmpty == true
-                ? card.attributes['data-number']!.trim()
-                : null) ??
             firstChapterNumber(link.text) ??
+            (RegExp(r'^(\\d+(?:[.][\\d]+)?)$').firstMatch(parts.last)?.group(1)) ??
             chapterNumberFromUrl(href);
         if (number == null || number.isEmpty) continue;
 
-        final chapterTitle = cleanText(
-          card.querySelector('.chapter-title')?.text ?? link.text,
-        );
-        final paid = looksPaid(card);
+        final chapterTitle = cleanText(link.text);
+        final parent = link.parent;
+        final paid =
+            parent?.classes.any((c) => c.toLowerCase().contains('lock')) ==
+                true;
 
         all[href] = Chapter(
           mangaKey: '$id::$remoteId',
@@ -134,45 +138,18 @@ class OlympusStaffSource implements MangaSource {
           number: number,
           title: paid && chapterTitle.isEmpty
               ? 'الفصل $number (مدفوع)'
-              : chapterTitle,
+              : _chapterTitle(chapterTitle, number),
           language: language,
           sortIndex: fallbackIndex,
           pageCount: 0,
         );
-      }
-
-      // Fallback for a markup variant where chapter-card is absent.
-      if (document.querySelectorAll('.chapter-card').isEmpty) {
-        for (final link in document.querySelectorAll(
-          'a[href*="/series/$remoteId/"]',
-        )) {
-          final href = absoluteUrl(
-            firstUrl,
-            link.attributes['href'] ?? '',
-          );
-          if (href.isEmpty || href == firstUrl) continue;
-
-          final number =
-              firstChapterNumber(link.text) ?? chapterNumberFromUrl(href);
-          if (number == null || number.isEmpty) continue;
-
-          all[href] = Chapter(
-            mangaKey: '$id::$remoteId',
-            remoteId: href,
-            number: number,
-            title: _chapterTitle(link.text, number),
-            language: language,
-            sortIndex: fallbackIndex,
-            pageCount: 0,
-          );
-        }
       }
     }
 
     final firstDocument = await _document(firstUrl);
     await parsePage(firstDocument, 0);
 
-    final maxPage = _maxPage(firstDocument).clamp(1, 20);
+    final maxPage = _maxPage(firstDocument).clamp(1, 100);
     for (var page = 2; page <= maxPage; page++) {
       final pageUrl = '$firstUrl?page=$page';
       try {
@@ -217,11 +194,14 @@ class OlympusStaffSource implements MangaSource {
     );
 
     final urls = <String>[];
-    for (final image in document.querySelectorAll(
-      '.reading-content .page-break img.manga-chapter-img, .reading-content img',
-    )) {
+    for (final image in document.querySelectorAll('img')) {
       final src = imageUrl(chapterRemoteId, image);
       if (src.isEmpty || src.startsWith('data:')) continue;
+
+      final uri = Uri.tryParse(src);
+      if (uri == null || uri.host != Uri.parse(_base).host) continue;
+      if (!uri.path.contains('/uploads/')) continue;
+
       if (!urls.contains(src)) urls.add(src);
     }
 
@@ -260,29 +240,30 @@ class OlympusStaffSource implements MangaSource {
     final results = <Manga>[];
     final seen = <String>{};
 
-    for (final card in document.querySelectorAll(
-      '.listupd .bsx, .listupd .bs, .box:has(.imgu a[href*="/series/"]), .popular-manga .entry-box',
-    )) {
-      final link = card.querySelector(
-        'a[href*="/series/"], .imgu a[href], .entry-image a[href]',
-      );
-      if (link == null) continue;
-
+    // The site has changed card classes over time. Manga links remain stable.
+    for (final link in document.querySelectorAll('a[href]')) {
       final href = absoluteUrl(_base, link.attributes['href'] ?? '');
-      final slug = _slugFromUrl(href);
+      if (href.isEmpty) continue;
+
+      final uri = Uri.tryParse(href);
+      if (uri == null || uri.host != Uri.parse(_base).host) continue;
+
+      final parts = uri.pathSegments.where((part) => part.isNotEmpty).toList();
+      final index = parts.indexOf('series');
+      if (index < 0 || index + 1 >= parts.length) continue;
+
+      final slug = parts[index + 1];
       if (slug.isEmpty || !seen.add(slug)) continue;
 
       final title = cleanText(
-        card.querySelector('.tt, .info h3, .entry-title a, h3 a')?.text ??
-            link.attributes['title'] ??
-            slug,
+        link.text.isNotEmpty
+            ? link.text
+            : (link.attributes['title'] ?? slug),
       );
       if (title.isEmpty) continue;
 
-      final cover = imageUrl(
-        _base,
-        card.querySelector('img'),
-      );
+      final parent = link.parent;
+      final cover = imageUrl(_base, parent?.querySelector('img'));
 
       results.add(
         Manga(
@@ -304,9 +285,16 @@ class OlympusStaffSource implements MangaSource {
     if (slug.isEmpty) return null;
     try {
       final document = await _document('$_base/series/$slug');
-      final title = cleanText(document.querySelector('h1, .author-info-title h6, .title')?.text ?? '');
-      if (title.isEmpty || document.querySelector('.chapter-card, .enhanced-chapters-section') == null) return null;
-      final cover = imageUrl(_base, document.querySelector('img[alt="Manga Image"], img.shadow-sm, .text-right img'));
+      final title = cleanText(
+        document.querySelector('h1, .author-info-title h6, .title')?.text ?? '',
+      );
+      if (title.isEmpty) return null;
+      final cover = imageUrl(
+        _base,
+        document.querySelector(
+          'img[alt="Manga Image"], img.shadow-sm, .text-right img',
+        ),
+      );
       return Manga(sourceId: id, remoteId: slug, title: title, remoteCoverUrl: cover.isEmpty ? null : cover);
     } catch (_) {
       return null;
