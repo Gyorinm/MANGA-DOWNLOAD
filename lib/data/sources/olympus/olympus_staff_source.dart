@@ -31,16 +31,22 @@ class OlympusStaffSource implements MangaSource {
 
   @override
   Future<List<Manga>> search(String query, {int page = 1}) async {
-    final encoded = Uri.encodeQueryComponent(query.trim());
-    final safePage = page < 1 ? 1 : page;
-    final url =
-        '$_base/?search=$encoded&page=' + safePage.toString();
-    final document = await _document(url);
-    final results = _parseMangaGrid(document);
-    if (results.isNotEmpty) return results;
+    final text = query.trim();
+    final direct = await _directSlugSearch(text);
+    if (direct != null) return <Manga>[direct];
 
-    final direct = await _directSlugSearch(query.trim());
-    return direct == null ? const <Manga>[] : <Manga>[direct];
+    final encoded = Uri.encodeQueryComponent(text);
+    final safePage = page < 1 ? 1 : page;
+    final url = '$_base/?search=$encoded&page=$safePage';
+    try {
+      final document = await _document(url);
+      final results = _parseMangaGrid(document);
+      if (results.isNotEmpty) return results;
+    } catch (_) {
+      // Some requests may be blocked by the site's anti-bot/ad layer.
+      // Exact-title lookup above remains available.
+    }
+    return const <Manga>[];
   }
 
   @override
