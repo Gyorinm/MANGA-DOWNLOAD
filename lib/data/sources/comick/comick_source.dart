@@ -121,19 +121,28 @@ class ComicKSource implements MangaSource {
     String remoteId,
     String language,
   ) async {
-    final raw = await _get('/comic/$remoteId/chapters', {
-      'lang': language,
-      'page': 1,
-      'limit': 100,
-      'chap-order': 1,
-    });
+    const pageSize = 100;
+    final result = <Map<String, dynamic>>[];
 
-    final map = _unwrapMap(raw, '');
-    final chapters = (map['chapters'] as List?) ?? const [];
-    return chapters
-        .whereType<Map>()
-        .map((item) => item.cast<String, dynamic>())
-        .toList(growable: false);
+    for (var page = 1; page <= 50; page++) {
+      final raw = await _get('/comic/$remoteId/chapters', {
+        'lang': language,
+        'page': page,
+        'limit': pageSize,
+        'chap-order': 1,
+      });
+
+      final map = _unwrapMap(raw, '');
+      final chapters = ((map['chapters'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((item) => item.cast<String, dynamic>())
+          .toList(growable: false);
+
+      result.addAll(chapters);
+      if (chapters.length < pageSize) break;
+    }
+
+    return result;
   }
 
   @override
