@@ -5,6 +5,7 @@ import '../../app/theme.dart';
 import '../../data/sources/manga_source.dart';
 import '../../providers.dart';
 import '../shared/delete_manga.dart';
+import '../shared/widgets.dart';
 import 'add_source_sheet.dart';
 
 /// شاشة اختيار المواقع: المستخدم يحدد أين يبحث التطبيق وأين ينزّل.
