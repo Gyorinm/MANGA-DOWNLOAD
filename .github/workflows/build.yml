@@ -5,13 +5,16 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
@@ -34,10 +37,33 @@ jobs:
       - run: flutter pub get
 
       - name: Analyze
-        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+        id: analyze
+        continue-on-error: true
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings > "$RUNNER_TEMP/analyze.txt" 2>&1
 
       - name: Build APK
-        run: flutter build apk --release
+        id: build
+        continue-on-error: true
+        run: flutter build apk --release > "$RUNNER_TEMP/build.txt" 2>&1
+
+      # تقرير نصي يُنشر في فرع ci-report ليسهل قراءة الأخطاء دون فتح سجلات Actions.
+      - name: Publish report
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/report"
+          cp "$RUNNER_TEMP/analyze.txt" "$RUNNER_TEMP/report/analyze.txt" 2>/dev/null || true
+          tail -n 200 "$RUNNER_TEMP/build.txt" > "$RUNNER_TEMP/report/build.txt" 2>/dev/null || true
+          echo "analyze=${{ steps.analyze.outcome }} build=${{ steps.build.outcome }} run=${{ github.run_id }}" > "$RUNNER_TEMP/report/status.txt"
+          cd "$RUNNER_TEMP/report"
+          git init -q
+          git checkout -q -b ci-report
+          git add -A
+          git -c user.name="ci" -c user.email="ci@users.noreply.github.com" commit -q -m "CI report for ${{ github.sha }}"
+          git push -q --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" ci-report
+
+      - name: Fail if analysis or build failed
+        if: steps.analyze.outcome == 'failure' || steps.build.outcome == 'failure'
+        run: exit 1
 
       - uses: actions/upload-artifact@v4
         with:
