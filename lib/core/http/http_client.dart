@@ -42,6 +42,28 @@ class HttpClient {
         ));
   }
 
+  /// جلب صفحة HTML كنص، مع نفس سياسة إعادة المحاولة المستخدمة للـJSON.
+  Future<Response<String>> getText(
+    String url, {
+    Map<String, dynamic>? query,
+    Options? options,
+    CancelToken? cancelToken,
+  }) {
+    final merged = (options ?? Options()).copyWith(
+      responseType: ResponseType.plain,
+      headers: {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        ...?options?.headers,
+      },
+    );
+    return _withRetry(() => _dio.get<String>(
+          url,
+          queryParameters: query,
+          options: merged,
+          cancelToken: cancelToken,
+        ));
+  }
+
   /// تنزيل ملف إلى مسار محلي. يُستعمل لصور الصفحات والأغلفة.
   Future<void> download(
     String url,
