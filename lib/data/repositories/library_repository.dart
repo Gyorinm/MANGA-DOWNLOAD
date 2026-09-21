@@ -58,7 +58,8 @@ class LibraryRepository {
     });
 
     final all = await Future.wait(futures);
-    return all.where((r) => r.items.isNotEmpty || r.error != null).toList();
+    // نُظهر المصدر فقط إذا وُجدت نتائج؛ الأخطاء والقوائم الفارغة تُخفى.
+    return all.where((r) => r.items.isNotEmpty).toList();
   }
 
   // ── التفاصيل والفصول ──────────────────────────────────────────────────
