@@ -6,7 +6,6 @@ import 'core/storage/file_storage.dart';
 import 'data/local/app_database.dart';
 import 'data/local/library_dao.dart';
 import 'data/repositories/library_repository.dart';
-import 'data/sources/demo/demo_source.dart';
 import 'data/sources/mangadex/mangadex_source.dart';
 import 'data/sources/source_registry.dart';
 import 'data/sources/source_settings.dart';
@@ -47,7 +46,6 @@ final sourceRegistryProvider = Provider<SourceRegistry>((ref) {
   final http = ref.watch(httpClientProvider);
   return SourceRegistry([
     MangaDexSource(http),
-    DemoSource(),
     // أضف المصادر الجديدة هنا؛ تظهر تلقائيًا في شاشة «مصادر التحميل» والبحث.
   ]);
 });

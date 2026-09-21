@@ -36,8 +36,7 @@ lib/
 │   │   ├── manga_source.dart     العقد الذي يطبّقه كل مصدر
 │   │   ├── source_registry.dart  حاوية المصادر المتاحة
 │   │   ├── source_settings.dart  اختيار المستخدم للمصادر المفعّلة
-│   │   ├── mangadex/             تطبيق العقد على MangaDex
-│   │   └── demo/                 مصدر تجريبي، نموذج لكتابة مصدر جديد
+│   │   └── mangadex/             تطبيق العقد على MangaDex
 │   ├── local/
 │   │   ├── app_database.dart     المخطط والترقيات
 │   │   └── library_dao.dart      كل جمل SQL في التطبيق
