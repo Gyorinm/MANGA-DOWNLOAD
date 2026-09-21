@@ -7,6 +7,8 @@ import 'data/local/app_database.dart';
 import 'data/local/library_dao.dart';
 import 'data/repositories/library_repository.dart';
 import 'data/sources/comick/comick_source.dart';
+import 'data/sources/olympus/olympus_staff_source.dart';
+import 'data/sources/starz/starz_manga_source.dart';
 import 'data/sources/mangadex/mangadex_source.dart';
 import 'data/sources/source_registry.dart';
 import 'data/sources/source_settings.dart';
@@ -52,6 +54,8 @@ final sourceRegistryProvider = Provider<SourceRegistry>((ref) {
   return SourceRegistry([
     MangaDexSource(http),
     ComicKSource(http),
+    OlympusStaffSource(http),
+    StarzMangaSource(http),
   ]);
 });
 
