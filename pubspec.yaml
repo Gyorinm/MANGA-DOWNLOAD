@@ -17,6 +17,7 @@ dependencies:
 
   # الشبكة
   dio: ^5.4.3+1
+  html: ^0.15.7
 
   # التخزين
   sqflite: ^2.3.3
