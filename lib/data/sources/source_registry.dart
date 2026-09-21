@@ -1,9 +1,10 @@
 import 'manga_source.dart';
 
-/// حاوية المصادر المتاحة، تُبنى في `providers.dart` (sourceRegistryProvider).
+/// حاوية المصادر المتاحة داخل التطبيق.
 ///
-/// أضف المصدر الجديد إلى تلك القائمة فقط؛ لا تُعدّل أي شاشة أو مدير تحميل.
-/// أما المفعَّل منها فيحدده المستخدم من شاشة «مصادر التحميل».
+/// إضافة موقع جديد تعني إضافة تطبيق جديد لـ [MangaSource] ثم وضعه في
+/// [sourceRegistryProvider]. اختيار المواقع التي يستخدمها الشخص محفوظ بشكل
+/// مستقل في [enabledSourcesProvider].
 class SourceRegistry {
   SourceRegistry(List<MangaSource> sources)
       : _byId = {for (final s in sources) s.id: s};
@@ -13,11 +14,6 @@ class SourceRegistry {
   List<MangaSource> get all => _byId.values.toList(growable: false);
 
   MangaSource? byId(String id) => _byId[id];
-
-  /// يضيف مصدرًا وقت التشغيل (مصدر كتبه المستخدم). المعرّف نفسه يستبدل القديم.
-  void register(MangaSource source) => _byId[source.id] = source;
-
-  void unregister(String id) => _byId.remove(id);
 
   /// يُستعمل عند القراءة من قاعدة البيانات حيث يجب أن يوجد المصدر.
   MangaSource require(String id) {
