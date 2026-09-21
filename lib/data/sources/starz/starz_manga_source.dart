@@ -35,7 +35,12 @@ class StarzMangaSource implements MangaSource {
     final url =
         '$_base/?s=$encoded&post_type=wp-manga&paged=' + pageNumber.toString();
     final document = await _document(url);
-    return _parseMangaGrid(document);
+    final results = _parseMangaGrid(document);
+    if (results.isNotEmpty) return results;
+
+    // Fallback when Madara's search cards are not exposed in the expected HTML.
+    final direct = await _directSlugSearch(query.trim());
+    return direct == null ? const <Manga>[] : <Manga>[direct];
   }
 
   @override
@@ -235,6 +240,77 @@ class StarzMangaSource implements MangaSource {
 
     return results;
   }
+
+  Future<Manga?> _directSlugSearch(String query) async {
+    final slug = _slugify(query);
+    if (slug.isEmpty) return null;
+    try {
+      final document = await _document('$_base/manga/$slug/');
+      if (!_looksLikeDetail(document)) return null;
+      final title = cleanText(
+        document.querySelector('.post-title h1, h1.entry-title, .manga-title')?.text ?? '',
+      );
+      if (title.isEmpty) return null;
+      final cover = imageUrl(
+        _base,
+        document.querySelector('.summary_image img, .profile-manga img'),
+      );
+      return Manga(
+        sourceId: id,
+        remoteId: slug,
+        title: title,
+        remoteCoverUrl: cover.isEmpty ? null : cover,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _slugify(String value) => value
+      .trim()
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+      .replaceAll(RegExp(r'^-+|-+
+    final uri = Uri.tryParse(url);
+    if (uri == null) return '';
+    final parts = uri.pathSegments.where((part) => part.isNotEmpty).toList();
+    if (parts.isEmpty) return '';
+    final index = parts.indexWhere(
+      (part) => part == 'manga' || part == 'comics' || part == 'manhwa',
+    );
+    if (index >= 0 && index + 1 < parts.length) return parts[index + 1];
+    return parts.last;
+  }
+
+  String _metaValue(dynamic document, List<String> labels) {
+    for (final item in document.querySelectorAll('.post-content_item')) {
+      final heading = cleanText(item.querySelector('.summary-heading')?.text ?? '');
+      if (labels.any((label) => heading.contains(label))) {
+        return cleanText(item.querySelector('.summary-content')?.text ?? '');
+      }
+    }
+    return '';
+  }
+
+  String _chapterTitle(String text, String number) {
+    var title = text
+        .replaceFirst(
+          RegExp('^الفصل\\\\s*' + RegExp.escape(number) + '\\\\s*[:.\\\\-]?\\\\s*'),
+          '',
+        )
+        .trim();
+    if (title == text) {
+      title = text
+          .replaceFirst(
+            RegExp('^' + RegExp.escape(number) + '\\\\s*[:.\\\\-]?\\\\s*'),
+            '',
+          )
+          .trim();
+    }
+    return title;
+  }
+}
+), '');
 
   String _slugFromUrl(String url) {
     final uri = Uri.tryParse(url);
