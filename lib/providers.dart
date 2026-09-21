@@ -6,10 +6,7 @@ import 'core/storage/file_storage.dart';
 import 'data/local/app_database.dart';
 import 'data/local/library_dao.dart';
 import 'data/repositories/library_repository.dart';
-import 'data/sources/custom/custom_source_config.dart';
-import 'data/sources/custom/custom_source_store.dart';
-import 'data/sources/custom/custom_sources_controller.dart';
-import 'data/sources/custom/komga_source.dart';
+import 'data/sources/comick/comick_source.dart';
 import 'data/sources/mangadex/mangadex_source.dart';
 import 'data/sources/source_registry.dart';
 import 'data/sources/source_settings.dart';
@@ -46,41 +43,22 @@ final daoProvider = Provider<LibraryDao>(
   (ref) => LibraryDao(ref.watch(databaseProvider)),
 );
 
-final customSourceStoreProvider = Provider<CustomSourceStore>(
-  (ref) => throw UnimplementedError('يُحقن في main()'),
-);
-
-/// المصادر التي أضافها المستخدم سابقًا، تُقرأ مرة عند الإقلاع.
-final initialCustomSourcesProvider =
-    Provider<List<CustomSourceConfig>>((ref) => const []);
-
-/// يزداد كلما أُضيف مصدر أو أُزيل، لتعيد الشاشات قراءة القائمة.
-final sourcesRevisionProvider = StateProvider<int>((_) => 0);
-
+/// جميع المواقع التي يعرف التطبيق كيف يتعامل معها.
+///
+/// المصدر لا يقرر هل سيبحث فيه المستخدم أم لا؛ هذا القرار محفوظ في
+/// [enabledSourcesProvider].
 final sourceRegistryProvider = Provider<SourceRegistry>((ref) {
   final http = ref.watch(httpClientProvider);
   return SourceRegistry([
     MangaDexSource(http),
-    for (final config in ref.watch(initialCustomSourcesProvider))
-      KomgaSource(http, config),
-    // أضف المصادر الجديدة هنا؛ تظهر تلقائيًا في شاشة «مصادر التحميل» والبحث.
+    ComicKSource(http),
   ]);
 });
 
-final customSourcesControllerProvider = Provider<CustomSourcesController>((ref) {
-  return CustomSourcesController(
-    registry: ref.watch(sourceRegistryProvider),
-    store: ref.watch(customSourceStoreProvider),
-    http: ref.watch(httpClientProvider),
-    onChanged: () => ref.read(sourcesRevisionProvider.notifier).state++,
-  );
-});
-
-/// المصادر التي فعّلها المستخدم. البحث والواجهة يقرآن منها،
-/// وتُعاد قراءتها كلما أُضيف مصدر أو أُزيل.
+/// المواقع التي اختار المستخدم البحث والتحميل منها.
+/// مصدر واحد على الأقل يبقى مفعّلًا.
 final enabledSourcesProvider =
     StateNotifierProvider<SourceSettingsNotifier, Set<String>>((ref) {
-  ref.watch(sourcesRevisionProvider);
   final registry = ref.watch(sourceRegistryProvider);
   return SourceSettingsNotifier(
     ref.watch(sharedPreferencesProvider),
@@ -127,7 +105,7 @@ final searchQueryProvider = StateProvider<String>((_) => '');
 final searchResultsProvider =
     FutureProvider.family<List<SourceResults>, String>((ref, query) {
   if (query.trim().length < 2) return Future.value(const []);
-  // مراقبة الاختيار تعيد البحث تلقائيًا عند تفعيل مصدر أو تعطيله.
+  // مراقبة اختيار المستخدم تعيد البحث تلقائيًا عند إضافة موقع أو إزالته.
   final enabled = ref.watch(enabledSourcesProvider);
   return ref
       .watch(libraryRepositoryProvider)
