@@ -251,7 +251,11 @@ class DownloadManager {
       await _storage.ensure(_storage.mangaDir(manga.key));
       final path = _storage.coverPath(manga.key);
       if (await File(path).exists()) return;
-      await _http.download(url, path);
+      await _http.download(
+        url,
+        path,
+        headers: _registry.byId(manga.sourceId)?.imageHeaders,
+      );
       await _dao.setLocalCover(manga.key, path);
       _repository.notifyChanged();
     } catch (_) {

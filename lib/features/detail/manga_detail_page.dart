@@ -55,6 +55,7 @@ class _Body extends ConsumerWidget {
               child: CoverImage(
                 localPath: manga.localCoverPath,
                 remoteUrl: manga.remoteCoverUrl,
+                sourceId: manga.sourceId,
                 title: manga.title,
               ),
             ),

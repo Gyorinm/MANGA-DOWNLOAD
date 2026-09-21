@@ -14,6 +14,11 @@ class SourceRegistry {
 
   MangaSource? byId(String id) => _byId[id];
 
+  /// يضيف مصدرًا وقت التشغيل (مصدر كتبه المستخدم). المعرّف نفسه يستبدل القديم.
+  void register(MangaSource source) => _byId[source.id] = source;
+
+  void unregister(String id) => _byId.remove(id);
+
   /// يُستعمل عند القراءة من قاعدة البيانات حيث يجب أن يوجد المصدر.
   MangaSource require(String id) {
     final source = _byId[id];

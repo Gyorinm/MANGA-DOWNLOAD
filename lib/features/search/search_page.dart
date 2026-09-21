@@ -180,7 +180,11 @@ class _ResultCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            CoverImage(remoteUrl: manga.remoteCoverUrl, title: manga.title),
+            CoverImage(
+              remoteUrl: manga.remoteCoverUrl,
+              sourceId: manga.sourceId,
+              title: manga.title,
+            ),
             const SizedBox(height: 8),
             Text(
               manga.title,

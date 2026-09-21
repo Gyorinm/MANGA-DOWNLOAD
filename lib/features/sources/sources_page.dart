@@ -2,10 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme.dart';
+import '../../data/sources/custom/komga_source.dart';
+import '../../data/sources/manga_source.dart';
 import '../../providers.dart';
 import '../shared/delete_manga.dart';
+import 'add_source_sheet.dart';
 
-/// شاشة اختيار المواقع: المستخدم هو من يقرّر أين يبحث وأين يحمّل.
+enum _SourceAction { deleteDownloads, removeSource }
+
+/// شاشة اختيار المواقع: المستخدم هو من يقرّر أين يبحث وأين يحمّل،
+/// وله أن يضيف مصادره الخاصة ويزيلها.
 class SourcesPage extends ConsumerWidget {
   const SourcesPage({super.key});
 
@@ -16,6 +22,7 @@ class SourcesPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(sourcesRevisionProvider);
     final sources = ref.watch(sourceRegistryProvider).all;
     final enabled = ref.watch(enabledSourcesProvider);
     final notifier = ref.read(enabledSourcesProvider.notifier);
@@ -23,12 +30,18 @@ class SourcesPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('مصادر التحميل')),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => showAddSourceSheet(context),
+        icon: const Icon(Icons.add),
+        label: const Text('إضافة مصدر'),
+      ),
       body: ListView(
+        padding: const EdgeInsets.only(bottom: 96),
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             child: Text(
-              'اختر المواقع التي يبحث فيها التطبيق ويحمّل منها. '
+              'اختر المواقع التي يبحث فيها التطبيق ويحمّل منها، أو أضف مصدرك الخاص. '
               'ما حمّلته سابقًا يبقى في مكتبتك مهما غيّرت اختيارك.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
@@ -42,14 +55,31 @@ class SourcesPage extends ConsumerWidget {
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               subtitle: Text(
-                'اللغات: ${source.languages.map((l) => _languageNames[l] ?? l).join('، ')}',
+                _describe(source),
                 style: const TextStyle(color: AppTheme.textMuted, fontSize: 12),
               ),
-              secondary: IconButton(
-                tooltip: 'حذف ما حُمّل من ${source.displayName}',
-                icon: const Icon(Icons.delete_sweep_outlined),
-                onPressed: () =>
-                    _deleteDownloads(context, ref, source.id, source.displayName),
+              secondary: PopupMenuButton<_SourceAction>(
+                tooltip: 'خيارات ${source.displayName}',
+                onSelected: (action) {
+                  switch (action) {
+                    case _SourceAction.deleteDownloads:
+                      _deleteDownloads(
+                          context, ref, source.id, source.displayName);
+                    case _SourceAction.removeSource:
+                      _removeSource(context, ref, source);
+                  }
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(
+                    value: _SourceAction.deleteDownloads,
+                    child: Text('حذف ما حُمّل منه'),
+                  ),
+                  if (source is KomgaSource)
+                    const PopupMenuItem(
+                      value: _SourceAction.removeSource,
+                      child: Text('إزالة هذا المصدر'),
+                    ),
+                ],
               ),
               value: enabled.contains(source.id),
               // آخر مصدر مفعّل لا يُعطَّل، حتى لا يبقى البحث بلا وجهة.
@@ -71,6 +101,31 @@ class SourcesPage extends ConsumerWidget {
       ),
     );
   }
+
+  String _describe(MangaSource source) {
+    if (source.languages.isNotEmpty) {
+      final names = source.languages.map((l) => _languageNames[l] ?? l);
+      return 'اللغات: ${names.join('، ')}';
+    }
+    if (source is KomgaSource) return source.config.baseUrl;
+    return '';
+  }
+}
+
+Future<void> _removeSource(
+  BuildContext context,
+  WidgetRef ref,
+  MangaSource source,
+) async {
+  final ok = await confirmDialog(
+    context,
+    title: 'إزالة «${source.displayName}»',
+    body: 'يُحذف المصدر من قائمتك فقط. ما حمّلته منه يبقى في مكتبتك '
+        'ويُقرأ دون إنترنت.',
+    confirmLabel: 'إزالة',
+  );
+  if (!ok) return;
+  await ref.read(customSourcesControllerProvider).remove(source.id);
 }
 
 /// يحذف كل المانهوا المحمّلة من مصدر واحد، دون المساس بالمصادر الأخرى.
@@ -82,7 +137,8 @@ Future<void> _deleteDownloads(
 ) async {
   final messenger = ScaffoldMessenger.of(context);
   final repo = ref.read(libraryRepositoryProvider);
-  final owned = (await repo.library()).where((m) => m.sourceId == sourceId).toList();
+  final owned =
+      (await repo.library()).where((m) => m.sourceId == sourceId).toList();
 
   if (owned.isEmpty) {
     messenger.showSnackBar(

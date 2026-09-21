@@ -37,6 +37,12 @@ jobs:
           grep -q 'android.permission.INTERNET' "$f" || \
             sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET"/>\n    <application|' "$f"
 
+      - name: Allow plain http for servers on the local network
+        run: |
+          f=android/app/src/main/AndroidManifest.xml
+          grep -q 'usesCleartextTraffic' "$f" || \
+            sed -i 's|<application|<application android:usesCleartextTraffic="true"|' "$f"
+
       - run: flutter pub get
 
       - name: Analyze

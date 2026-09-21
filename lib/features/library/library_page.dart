@@ -90,6 +90,7 @@ class _LibraryTile extends ConsumerWidget {
               CoverImage(
                 localPath: manga.localCoverPath,
                 remoteUrl: manga.remoteCoverUrl,
+                sourceId: manga.sourceId,
                 title: manga.title,
               ),
               if (manga.downloadedChapters < manga.totalChapters)

@@ -6,6 +6,10 @@ import 'core/storage/file_storage.dart';
 import 'data/local/app_database.dart';
 import 'data/local/library_dao.dart';
 import 'data/repositories/library_repository.dart';
+import 'data/sources/custom/custom_source_config.dart';
+import 'data/sources/custom/custom_source_store.dart';
+import 'data/sources/custom/custom_sources_controller.dart';
+import 'data/sources/custom/komga_source.dart';
 import 'data/sources/mangadex/mangadex_source.dart';
 import 'data/sources/source_registry.dart';
 import 'data/sources/source_settings.dart';
@@ -42,17 +46,41 @@ final daoProvider = Provider<LibraryDao>(
   (ref) => LibraryDao(ref.watch(databaseProvider)),
 );
 
+final customSourceStoreProvider = Provider<CustomSourceStore>(
+  (ref) => throw UnimplementedError('يُحقن في main()'),
+);
+
+/// المصادر التي أضافها المستخدم سابقًا، تُقرأ مرة عند الإقلاع.
+final initialCustomSourcesProvider =
+    Provider<List<CustomSourceConfig>>((ref) => const []);
+
+/// يزداد كلما أُضيف مصدر أو أُزيل، لتعيد الشاشات قراءة القائمة.
+final sourcesRevisionProvider = StateProvider<int>((_) => 0);
+
 final sourceRegistryProvider = Provider<SourceRegistry>((ref) {
   final http = ref.watch(httpClientProvider);
   return SourceRegistry([
     MangaDexSource(http),
+    for (final config in ref.watch(initialCustomSourcesProvider))
+      KomgaSource(http, config),
     // أضف المصادر الجديدة هنا؛ تظهر تلقائيًا في شاشة «مصادر التحميل» والبحث.
   ]);
 });
 
-/// المصادر التي فعّلها المستخدم. البحث والواجهة يقرآن منها.
+final customSourcesControllerProvider = Provider<CustomSourcesController>((ref) {
+  return CustomSourcesController(
+    registry: ref.watch(sourceRegistryProvider),
+    store: ref.watch(customSourceStoreProvider),
+    http: ref.watch(httpClientProvider),
+    onChanged: () => ref.read(sourcesRevisionProvider.notifier).state++,
+  );
+});
+
+/// المصادر التي فعّلها المستخدم. البحث والواجهة يقرآن منها،
+/// وتُعاد قراءتها كلما أُضيف مصدر أو أُزيل.
 final enabledSourcesProvider =
     StateNotifierProvider<SourceSettingsNotifier, Set<String>>((ref) {
+  ref.watch(sourcesRevisionProvider);
   final registry = ref.watch(sourceRegistryProvider);
   return SourceSettingsNotifier(
     ref.watch(sharedPreferencesProvider),

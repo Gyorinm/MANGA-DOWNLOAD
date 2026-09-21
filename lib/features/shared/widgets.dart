@@ -2,38 +2,48 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/theme.dart';
+import '../../providers.dart';
 
 /// غلاف بنسبة 2:3 يفضّل الملف المحلي، ويسقط إلى الشبكة، ثم إلى بديل نصي.
 ///
 /// هذا هو المكان الوحيد الذي يقرّر كيف تُعرض الأغلفة، فلا يتكرر المنطق.
-class CoverImage extends StatelessWidget {
+class CoverImage extends ConsumerWidget {
   const CoverImage({
     super.key,
     this.localPath,
     this.remoteUrl,
+    this.sourceId,
     this.title = '',
     this.radius = 10,
   });
 
   final String? localPath;
   final String? remoteUrl;
+
+  /// لإرفاق ترويسة الدخول عندما يكون الغلاف على خادم محميّ.
+  final String? sourceId;
   final String title;
   final double radius;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final id = sourceId;
+    final headers =
+        id == null ? null : ref.watch(sourceRegistryProvider).byId(id)?.imageHeaders;
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: AspectRatio(
         aspectRatio: 2 / 3,
-        child: _build(),
+        child: _build(headers),
       ),
     );
   }
 
-  Widget _build() {
+  Widget _build(Map<String, String>? headers) {
     final path = localPath;
     if (path != null && File(path).existsSync()) {
       return Image.file(File(path), fit: BoxFit.cover);
@@ -43,6 +53,7 @@ class CoverImage extends StatelessWidget {
     if (url != null && url.isNotEmpty) {
       return CachedNetworkImage(
         imageUrl: url,
+        httpHeaders: headers,
         fit: BoxFit.cover,
         placeholder: (_, __) => const ColoredBox(color: AppTheme.surfaceHigh),
         errorWidget: (_, __, ___) => _fallback(),
