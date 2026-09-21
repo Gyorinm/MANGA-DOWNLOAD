@@ -53,7 +53,7 @@ class SourcesPage extends ConsumerWidget {
             SectionTitle(
               'المواقع المفعّلة',
               trailing: Text(
-                ${active.length},
+                '${active.length}',
                 style: const TextStyle(
                   color: AppTheme.textMuted,
                   fontSize: 12,
