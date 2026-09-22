@@ -11,332 +11,143 @@ import 'package:maktaba/data/sources/html_source_utils.dart';
 /// مصدر Team-X / Olympus Staff.
 class OlympusStaffSource implements MangaSource {
   OlympusStaffSource(this._http);
-
   final HttpClient _http;
   static const _base = 'https://olympustaff.com';
 
-  @override
-  String get id => 'olympus';
-
-  @override
-  String get displayName => 'Olympus Staff (Team-X)';
-
-  @override
-  List<String> get languages => const ['ar'];
-
-  @override
-  Map<String, String> get imageHeaders => const {
-        'Referer': 'https://olympustaff.com/',
-      };
+  @override String get id => 'olympus';
+  @override String get displayName => 'Olympus Staff (Team-X)';
+  @override List<String> get languages => const ['ar'];
+  @override Map<String, String> get imageHeaders => const {'Referer': 'https://olympustaff.com/'};
 
   @override
   Future<List<Manga>> search(String query, {int page = 1}) async {
-    final text = query.trim();
-    final direct = await _directSlugSearch(text);
-    if (direct != null) return <Manga>[direct];
-
-    final encoded = Uri.encodeQueryComponent(text);
-    final safePage = page < 1 ? 1 : page;
-    final url = '$_base/?search=$encoded&page=$safePage';
-    try {
-      final document = await _document(url);
-      final results = _parseMangaGrid(document);
-      if (results.isNotEmpty) return results;
-    } catch (_) {
-      // Some requests may be blocked by the site's anti-bot/ad layer.
-      // Exact-title lookup above remains available.
-    }
-    return const <Manga>[];
+    final direct = await _directSlugSearch(query);
+    if (direct != null) return [direct];
+    final url = '$_base/?search=${Uri.encodeQueryComponent(query.trim())}&page=${page < 1 ? 1 : page}';
+    try { return _parseMangaGrid(await _document(url)); } catch (_) { return const []; }
   }
 
   @override
   Future<Manga> details(String remoteId) async {
-    final url = '$_base/series/$remoteId';
-    final document = await _document(url);
-
-    final cover = imageUrl(
-      _base,
-      document.querySelector(
-        'img[alt="Manga Image"], img.shadow-sm, .text-right img',
-      ),
-    );
-
-    final title = cleanText(
-      document.querySelector('h1, .author-info-title h6, .title')?.text ??
-          remoteId,
-    );
-
-    final paragraphs = document
-        .querySelectorAll('p')
-        .map((p) => cleanText(p.text))
-        .where((text) => text.length > 30 && !text.contains('http'))
-        .toList();
-    final description = paragraphs.isEmpty ? '' : paragraphs.first;
-
-    final bodyText = cleanText(document.body?.text ?? '');
-    final status = detectStatus(bodyText);
-
-    final author = _fullInfoValue(document, 'الرسام');
-
-    return Manga(
-      sourceId: id,
-      remoteId: remoteId,
-      title: title,
-      description: description,
-      author: author,
-      status: status,
-      remoteCoverUrl: cover.isEmpty ? null : cover,
-    );
+    for (final url in ['$_base/series/$remoteId', '$_base/manga/$remoteId/', '$_base/manga/$remoteId']) {
+      try {
+        final doc = await _document(url);
+        final title = cleanText(doc.querySelector('h1, .author-info-title h6, .title')?.text ?? remoteId);
+        if (title.isEmpty) continue;
+        final cover = imageUrl(_base, doc.querySelector('img[alt="Manga Image"], img.shadow-sm, .text-right img, .summary_image img, .profile-manga img'));
+        final description = doc.querySelectorAll('p').map((p) => cleanText(p.text)).firstWhere((v) => v.length > 30 && !v.contains('http'), orElse: () => '');
+        return Manga(sourceId: id, remoteId: remoteId, title: title, description: description, status: detectStatus(cleanText(doc.body?.text ?? '')), remoteCoverUrl: cover.isEmpty ? null : cover);
+      } catch (_) {}
+    }
+    throw const AppFailure('لم أجد هذه المانجا في Olympus Staff.');
   }
 
   @override
-  Future<List<Chapter>> chapters(
-    String remoteId, {
-    String language = 'ar',
-  }) async {
-    final firstUrl = '$_base/series/$remoteId';
-    final all = <String, Chapter>{};
-
-    Future<void> parsePage(
-      dynamic document,
-      int fallbackIndex,
-    ) async {
-      // Olympus currently exposes chapter links as /series/<id>/<number>.
-      // Do not depend on page-specific CSS classes; inspect all public links.
-      for (final link in document.querySelectorAll('a[href]')) {
-        final href = absoluteUrl(
-          firstUrl,
-          link.attributes['href'] ?? '',
-        );
-        if (href.isEmpty || href == firstUrl) continue;
-
-        final uri = Uri.tryParse(href);
-        if (uri == null || uri.host != Uri.parse(_base).host) continue;
-
-        final parts = uri.pathSegments.where((part) => part.isNotEmpty).toList();
-        if (parts.length < 3 ||
-            parts[0] != 'series' ||
-            parts[1] != remoteId) {
-          continue;
-        }
-
-        final number =
-            firstChapterNumber(link.text) ??
-            (RegExp(r'^(\\d+(?:[.][\\d]+)?)$').firstMatch(parts.last)?.group(1)) ??
-            chapterNumberFromUrl(href);
-        if (number == null || number.isEmpty) continue;
-
-        final chapterTitle = cleanText(link.text);
-        final parent = link.parent;
-        final paid =
-            parent?.classes.any((c) => c.toLowerCase().contains('lock')) ==
-                true;
-
-        all[href] = Chapter(
-          mangaKey: '$id::$remoteId',
-          remoteId: href,
-          number: number,
-          title: paid && chapterTitle.isEmpty
-              ? 'الفصل $number (مدفوع)'
-              : _chapterTitle(chapterTitle, number),
-          language: language,
-          sortIndex: fallbackIndex,
-          pageCount: 0,
-        );
-      }
-    }
-
-    final firstDocument = await _document(firstUrl);
-    await parsePage(firstDocument, 0);
-
-    final maxPage = _maxPage(firstDocument).clamp(1, 100);
-    for (var page = 2; page <= maxPage; page++) {
-      final pageUrl = '$firstUrl?page=$page';
+  Future<List<Chapter>> chapters(String remoteId, {String language = 'ar'}) async {
+    final found = <String, Chapter>{};
+    for (final baseUrl in ['$_base/series/$remoteId', '$_base/manga/$remoteId/', '$_base/manga/$remoteId']) {
       try {
-        final document = await _document(pageUrl);
-        final before = all.length;
-        await parsePage(document, page);
-        if (all.length == before) break;
-      } catch (_) {
-        break;
-      }
+        final doc = await _document(baseUrl);
+        _collect(doc, baseUrl, remoteId, language, found, 0);
+        final max = _maxPage(doc).clamp(1, 100);
+        for (var page = 2; page <= max; page++) {
+          final before = found.length;
+          _collect(await _document('$baseUrl?page=$page'), baseUrl, remoteId, language, found, page);
+          if (found.length == before) break;
+        }
+      } catch (_) {}
     }
+    final list = found.values.toList()..sort((a, b) => chapterSortNumber(a.number).compareTo(chapterSortNumber(b.number)));
+    return [for (var i = 0; i < list.length; i++) Chapter(mangaKey: list[i].mangaKey, remoteId: list[i].remoteId, number: list[i].number, title: list[i].title, language: list[i].language, sortIndex: i, pageCount: list[i].pageCount)];
+  }
 
-    final chapters = all.values.toList()
-      ..sort(
-        (a, b) => chapterSortNumber(a.number).compareTo(
-          chapterSortNumber(b.number),
-        ),
-      );
-
-    return chapters
-        .asMap()
-        .entries
-        .map(
-          (entry) => Chapter(
-            mangaKey: entry.value.mangaKey,
-            remoteId: entry.value.remoteId,
-            number: entry.value.number,
-            title: entry.value.title,
-            language: entry.value.language,
-            sortIndex: entry.key,
-            pageCount: entry.value.pageCount,
-          ),
-        )
-        .toList(growable: false);
+  void _collect(dynamic doc, String base, String remoteId, String language, Map<String, Chapter> out, int index) {
+    for (final link in doc.querySelectorAll('a[href]')) {
+      final href = absoluteUrl(base, link.attributes['href'] ?? '');
+      if (!_isChapter(href, remoteId)) continue;
+      final number = _chapterNumber(href, link.text);
+      if (number == null) continue;
+      final text = cleanText(link.text);
+      final paid = link.parent?.classes.any((c) => c.toLowerCase().contains('lock')) == true;
+      out[href] = Chapter(mangaKey: '$id::$remoteId', remoteId: href, number: number, title: paid && text.isEmpty ? 'الفصل $number (مدفوع)' : _chapterTitle(text, number), language: language, sortIndex: index, pageCount: 0);
+    }
   }
 
   @override
   Future<List<String>> pageUrls(String chapterRemoteId) async {
-    final document = await _document(
-      chapterRemoteId,
-      headers: {'Referer': '$_base/'},
-    );
-
+    final doc = await _document(chapterRemoteId, headers: {'Referer': '$_base/'});
     final urls = <String>[];
-    for (final image in document.querySelectorAll('img')) {
-      final src = imageUrl(chapterRemoteId, image);
-      if (src.isEmpty || src.startsWith('data:')) continue;
-
-      final uri = Uri.tryParse(src);
-      if (uri == null || uri.host != Uri.parse(_base).host) continue;
-      if (!uri.path.contains('/uploads/')) continue;
-
-      if (!urls.contains(src)) urls.add(src);
+    for (final img in doc.querySelectorAll('img')) {
+      for (final attr in ['data-src', 'data-lazy-src', 'data-original', 'src']) {
+        final value = absoluteUrl(chapterRemoteId, img.attributes[attr] ?? '');
+        final uri = Uri.tryParse(value);
+        if (uri == null || uri.host != Uri.parse(_base).host || value.startsWith('data:')) continue;
+        final path = uri.path.toLowerCase();
+        if (path.contains('/uploads/') || RegExp(r'\.(jpe?g|png|webp|gif)$').hasMatch(path)) { if (!urls.contains(value)) urls.add(value); break; }
+      }
     }
-
-    if (urls.isEmpty) {
-      throw const AppFailure('لم أجد صفحات هذا الفصل في Olympus Staff.');
-    }
-
+    if (urls.isEmpty) throw const AppFailure('لم أجد صفحات هذا الفصل في Olympus Staff.');
     return urls;
   }
 
-  Future<dynamic> _document(
-    String url, {
-    Map<String, String>? headers,
-  }) async {
-    try {
-      final response = await _http.getText(
-        url,
-        options: Options(
-          headers: {
-            'Accept-Language': 'ar,en;q=0.9',
-            ...?headers,
-          },
-        ),
-      );
-      final body = response.data;
-      if (body == null || body.isEmpty) throw AppFailure.parsing();
-      return html_parser.parse(body);
-    } on DioException catch (e) {
-      throw AppFailure.network(e);
-    } on FormatException catch (e) {
-      throw AppFailure.parsing(e);
+  bool _isChapter(String href, String remoteId) {
+    final uri = Uri.tryParse(href);
+    if (uri == null || uri.host != Uri.parse(_base).host) return false;
+    final parts = uri.pathSegments.where((p) => p.isNotEmpty).toList();
+    if (parts.isEmpty) return false;
+    final lower = href.toLowerCase();
+    final token = lower.contains('chapter') || lower.contains('الفصل') || RegExp(r'/\d+(?:\.\d+)?/?$').hasMatch(lower);
+    if (!token) return false;
+    if (parts[0].toLowerCase() == 'series' && parts.length >= 2) return parts[1].toLowerCase() == remoteId.toLowerCase();
+    if (parts[0].toLowerCase() == 'manga' && parts.length >= 2) {
+      final slug = parts[1].toLowerCase();
+      final base = remoteId.toLowerCase();
+      return slug == base || slug.startsWith('$base-chapter-') || slug.startsWith('${base}-chapter-') || slug.startsWith('$base-الفصل-');
     }
+    return false;
   }
 
-  List<Manga> _parseMangaGrid(dynamic document) {
-    final results = <Manga>[];
-    final seen = <String>{};
-
-    // The site has changed card classes over time. Manga links remain stable.
-    for (final link in document.querySelectorAll('a[href]')) {
-      final href = absoluteUrl(_base, link.attributes['href'] ?? '');
-      if (href.isEmpty) continue;
-
-      final uri = Uri.tryParse(href);
-      if (uri == null || uri.host != Uri.parse(_base).host) continue;
-
-      final parts = uri.pathSegments.where((part) => part.isNotEmpty).toList();
-      final index = parts.indexOf('series');
-      if (index < 0 || index + 1 >= parts.length) continue;
-
-      final slug = parts[index + 1];
-      if (slug.isEmpty || !seen.add(slug)) continue;
-
-      final title = cleanText(
-        link.text.isNotEmpty
-            ? link.text
-            : (link.attributes['title'] ?? slug),
-      );
-      if (title.isEmpty) continue;
-
-      final parent = link.parent;
-      final cover = imageUrl(_base, parent?.querySelector('img'));
-
-      results.add(
-        Manga(
-          sourceId: id,
-          remoteId: slug,
-          title: title,
-          remoteCoverUrl: cover.isEmpty ? null : cover,
-        ),
-      );
+  String? _chapterNumber(String href, String text) {
+    final value = '$href $text';
+    for (final r in [RegExp(r'chapter[-_ ]?(\d+(?:\.\d+)?)', caseSensitive: false), RegExp(r'الفصل[-_ ]?(\d+(?:\.\d+)?)'), RegExp(r'/([0-9]+(?:\.\d+)?)/?(?:\?|$)'), RegExp(r'(?:^|[^0-9])(\d+(?:\.\d+)?)(?:\D|$)')]) {
+      final m = r.firstMatch(value);
+      if (m != null) return m.group(1) ?? m.group(2);
     }
+    return null;
+  }
 
-    return results;
+  List<Manga> _parseMangaGrid(dynamic doc) {
+    final result = <Manga>[]; final seen = <String>{};
+    for (final link in doc.querySelectorAll('a[href]')) {
+      final href = absoluteUrl(_base, link.attributes['href'] ?? ''); final uri = Uri.tryParse(href);
+      if (uri == null || uri.host != Uri.parse(_base).host) continue;
+      final parts = uri.pathSegments.where((p) => p.isNotEmpty).toList();
+      final seriesIndex = parts.indexOf('series');
+      final mangaIndex = parts.indexOf('manga');
+      final i = seriesIndex >= 0 ? seriesIndex : mangaIndex;
+      if (i < 0 || i + 1 >= parts.length || _isChapter(href, parts[i + 1])) continue;
+      final slug = parts[i + 1]; if (!seen.add(slug)) continue;
+      final title = cleanText(link.text.isNotEmpty ? link.text : (link.attributes['title'] ?? slug)); if (title.isEmpty) continue;
+      final cover = imageUrl(_base, link.parent?.querySelector('img'));
+      result.add(Manga(sourceId: id, remoteId: slug, title: title, remoteCoverUrl: cover.isEmpty ? null : cover));
+    }
+    return result;
   }
 
   Future<Manga?> _directSlugSearch(String query) async {
     var slug = query.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-');
-    while (slug.startsWith('-')) slug = slug.substring(1);
-    while (slug.endsWith('-')) slug = slug.substring(0, slug.length - 1);
-    if (slug.isEmpty) return null;
-    try {
-      final document = await _document('$_base/series/$slug');
-      final title = cleanText(
-        document.querySelector('h1, .author-info-title h6, .title')?.text ?? '',
-      );
-      if (title.isEmpty) return null;
-      final cover = imageUrl(
-        _base,
-        document.querySelector(
-          'img[alt="Manga Image"], img.shadow-sm, .text-right img',
-        ),
-      );
-      return Manga(sourceId: id, remoteId: slug, title: title, remoteCoverUrl: cover.isEmpty ? null : cover);
-    } catch (_) {
-      return null;
+    slug = slug.replaceAll(RegExp(r'^-+|-+$'), ''); if (slug.isEmpty) return null;
+    for (final url in ['$_base/series/$slug', '$_base/manga/$slug/']) {
+      try { final doc = await _document(url); final title = cleanText(doc.querySelector('h1, .author-info-title h6, .title')?.text ?? ''); if (title.isNotEmpty) { final cover = imageUrl(_base, doc.querySelector('img[alt="Manga Image"], img.shadow-sm, .text-right img, .summary_image img, .profile-manga img')); return Manga(sourceId: id, remoteId: slug, title: title, remoteCoverUrl: cover.isEmpty ? null : cover); } } catch (_) {}
     }
+    return null;
   }
 
-  String _slugFromUrl(String url) {
-    final uri = Uri.tryParse(url);
-    if (uri == null) return '';
-    final parts = uri.pathSegments.where((part) => part.isNotEmpty).toList();
-    final index = parts.indexOf('series');
-    if (index >= 0 && index + 1 < parts.length) return parts[index + 1];
-    return '';
+  Future<dynamic> _document(String url, {Map<String, String>? headers}) async {
+    try { final response = await _http.getText(url, options: Options(headers: {'Accept-Language': 'ar;q=1.0', ...?headers})); final body = response.data; if (body == null || body.isEmpty) throw AppFailure.parsing(); return html_parser.parse(body); }
+    on DioException catch (e) { throw AppFailure.network(e); } on FormatException catch (e) { throw AppFailure.parsing(e); }
   }
 
-  int _maxPage(dynamic document) {
-    final values = document
-        .querySelectorAll('ul.pagination a.page-link, .pagination a')
-        .map((a) => int.tryParse(cleanText(a.text)))
-        .whereType<int>()
-        .toList();
-    return values.isEmpty ? 1 : values.reduce((a, b) => a > b ? a : b);
-  }
-
-  String _fullInfoValue(dynamic document, String label) {
-    for (final info in document.querySelectorAll('.full-list-info')) {
-      final text = info.querySelector('small')?.text ?? '';
-      if (text.contains(label)) {
-        final values = info.querySelectorAll('small');
-        if (values.length > 1) return cleanText(values[1].text);
-      }
-    }
-    return '';
-  }
-
-  String _chapterTitle(String text, String number) {
-    final cleaned = text
-        .replaceFirst(
-          RegExp('^الفصل\\\\s*' + RegExp.escape(number) + '\\\\s*[:.\\\\-]?\\\\s*'),
-          '',
-        )
-        .trim();
-    return cleaned;
-  }
+  int _maxPage(dynamic doc) { final values = doc.querySelectorAll('.pagination a, ul.pagination a.page-link').map((a) => int.tryParse(cleanText(a.text))).whereType<int>().toList(); return values.isEmpty ? 1 : values.reduce((a, b) => a > b ? a : b); }
+  String _chapterTitle(String text, String number) => text.replaceFirst(RegExp('^الفصل\\s*${RegExp.escape(number)}\\s*[:.\\-]?\\s*'), '').trim();
 }
