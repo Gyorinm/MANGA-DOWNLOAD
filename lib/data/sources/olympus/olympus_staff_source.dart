@@ -48,13 +48,12 @@ class OlympusStaffSource implements MangaSource {
         if (title.isEmpty) continue;
         final cover = imageUrl(_base, document.querySelector('img[alt="Manga Image"], img.shadow-sm, .text-right img, .summary_image img, .profile-manga img'));
         final paragraphs = document.querySelectorAll('p').map((p) => cleanText(p.text)).where((text) => text.length > 30 && !text.contains('http')).toList();
-        final author = _fullInfoValue(document, 'الرسام');
         return Manga(
           sourceId: id,
           remoteId: remoteId,
           title: title,
           description: paragraphs.isEmpty ? '' : paragraphs.first,
-          author: author,
+          author: _fullInfoValue(document, 'الرسام'),
           status: detectStatus(cleanText(document.body?.text ?? '')),
           remoteCoverUrl: cover.isEmpty ? null : cover,
         );
@@ -66,13 +65,7 @@ class OlympusStaffSource implements MangaSource {
   @override
   Future<List<Chapter>> chapters(String remoteId, {String language = 'ar'}) async {
     final found = <String, Chapter>{};
-    final pages = <String>[
-      '$_base/series/$remoteId',
-      '$_base/manga/$remoteId/',
-      '$_base/manga/$remoteId',
-    ];
-
-    for (final pageUrl in pages) {
+    for (final pageUrl in ['$_base/series/$remoteId', '$_base/manga/$remoteId/', '$_base/manga/$remoteId']) {
       try {
         final document = await _document(pageUrl);
         _collectChapters(document, pageUrl, remoteId, language, found, 0);
@@ -84,7 +77,7 @@ class OlympusStaffSource implements MangaSource {
           if (found.length == before) break;
         }
       } catch (_) {
-        // جرّب شكل الصفحة التالي؛ لا تسقط العملية بسبب شكل رابط غير موجود.
+        // نجرب نمط الرابط التالي؛ بعض السلاسل تستخدم /series/ وأخرى /manga/.
       }
     }
 
@@ -149,27 +142,36 @@ class OlympusStaffSource implements MangaSource {
     if (uri == null || uri.host != Uri.parse(_base).host) return false;
     final parts = uri.pathSegments.where((part) => part.isNotEmpty).toList();
     if (parts.length < 2) return false;
+    final slug = parts[1].toLowerCase();
+    final base = remoteId.toLowerCase();
     final lower = href.toLowerCase();
-    final hasNumber = _chapterNumber(href, '') != null;
     final hasChapterWord = lower.contains('chapter') || lower.contains('الفصل') || lower.contains('-ch-');
-    if (!hasNumber && !hasChapterWord) return false;
+    final hasNumber = _chapterNumber(href, '') != null;
+    if (!hasChapterWord && !hasNumber) return false;
 
     if (parts[0].toLowerCase() == 'series') {
-      return parts.length >= 3 && parts[1].toLowerCase() == remoteId.toLowerCase();
+      // Olympus uses both /series/id/44 and /series/id-الفصل-44.
+      return parts.length >= 3
+          ? parts[1].toLowerCase() == base
+          : _sameMangaSlug(slug, base);
     }
     if (parts[0].toLowerCase() == 'manga') {
-      final slug = parts[1].toLowerCase();
-      final base = remoteId.toLowerCase();
-      return slug.startsWith('$base-') || slug == base;
+      return _sameMangaSlug(slug, base);
     }
     return false;
   }
 
+  bool _sameMangaSlug(String actual, String base) {
+    return actual == base ||
+        actual.startsWith('$base-') ||
+        actual.startsWith('$base_') ||
+        actual.startsWith('$base/');
+  }
+
   String? _chapterNumber(String href, String text) {
-    final value = '$href $text';
+    final value = _normaliseDigits('$href $text');
     for (final pattern in [
-      RegExp(r'chapter[-_ ]?(\d+(?:\.\d+)?)', caseSensitive: false),
-      RegExp(r'الفصل[-_ ]?(\d+(?:\.\d+)?)'),
+      RegExp(r'(?:chapter|الفصل)[-_ ]?(\d+(?:\.\d+)?)', caseSensitive: false),
       RegExp(r'/([0-9]+(?:\.\d+)?)/?(?:\?|$)'),
       RegExp(r'(?:^|[^0-9])(\d+(?:\.\d+)?)(?:\D|$)'),
     ]) {
@@ -177,6 +179,14 @@ class OlympusStaffSource implements MangaSource {
       if (match != null) return match.group(1) ?? match.group(2);
     }
     return null;
+  }
+
+  String _normaliseDigits(String value) {
+    const arabic = '٠١٢٣٤٥٦٧٨٩';
+    return value.split('').map((char) {
+      final index = arabic.indexOf(char);
+      return index < 0 ? char : '$index';
+    }).join();
   }
 
   List<Manga> _parseMangaGrid(dynamic document) {
