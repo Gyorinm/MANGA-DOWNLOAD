@@ -51,42 +51,55 @@ class OlympusStaffSource implements MangaSource {
 
   @override
   Future<Manga> details(String remoteId) async {
-    final url = '$_base/series/$remoteId';
-    final document = await _document(url);
+    final candidates = [
+      '$_base/series/$remoteId',
+      '$_base/manga/$remoteId/',
+      '$_base/manga/$remoteId',
+    ];
 
-    final cover = imageUrl(
-      _base,
-      document.querySelector(
-        'img[alt="Manga Image"], img.shadow-sm, .text-right img',
-      ),
-    );
+    for (final url in candidates) {
+      try {
+        final document = await _document(url);
+        final title = cleanText(
+          document.querySelector('h1, .author-info-title h6, .title')?.text ??
+              remoteId,
+        );
+        if (title.isEmpty) continue;
 
-    final title = cleanText(
-      document.querySelector('h1, .author-info-title h6, .title')?.text ??
-          remoteId,
-    );
+        final cover = imageUrl(
+          _base,
+          document.querySelector(
+            'img[alt="Manga Image"], img.shadow-sm, .text-right img, .summary_image img, .profile-manga img',
+          ),
+        );
 
-    final paragraphs = document
-        .querySelectorAll('p')
-        .map((p) => cleanText(p.text))
-        .where((text) => text.length > 30 && !text.contains('http'))
-        .toList();
-    final description = paragraphs.isEmpty ? '' : paragraphs.first;
+        final paragraphs = document
+            .querySelectorAll('p')
+            .map((p) => cleanText(p.text))
+            .where((text) => text.length > 30 && !text.contains('http'))
+            .toList();
+        final description = paragraphs.isEmpty ? '' : paragraphs.first;
 
-    final bodyText = cleanText(document.body?.text ?? '');
-    final status = detectStatus(bodyText);
+        final bodyText = cleanText(document.body?.text ?? '');
+        final status = detectStatus(bodyText);
 
-    final author = _fullInfoValue(document, 'الرسام');
+        final author = _fullInfoValue(document, 'الرسام');
 
-    return Manga(
-      sourceId: id,
-      remoteId: remoteId,
-      title: title,
-      description: description,
-      author: author,
-      status: status,
-      remoteCoverUrl: cover.isEmpty ? null : cover,
-    );
+        return Manga(
+          sourceId: id,
+          remoteId: remoteId,
+          title: title,
+          description: description,
+          author: author,
+          status: status,
+          remoteCoverUrl: cover.isEmpty ? null : cover,
+        );
+      } catch (_) {
+        // Try the next URL pattern.
+      }
+    }
+
+    throw const AppFailure('لم أجد هذه المانجا في Olympus Staff.');
   }
 
   @override
@@ -94,43 +107,30 @@ class OlympusStaffSource implements MangaSource {
     String remoteId, {
     String language = 'ar',
   }) async {
-    final firstUrl = '$_base/series/$remoteId';
     final all = <String, Chapter>{};
+    final candidates = [
+      '$_base/series/$remoteId',
+      '$_base/manga/$remoteId/',
+      '$_base/manga/$remoteId',
+    ];
 
     Future<void> parsePage(
       dynamic document,
       int fallbackIndex,
+      String baseUrl,
     ) async {
-      // Olympus currently exposes chapter links as /series/<id>/<number>.
-      // Do not depend on page-specific CSS classes; inspect all public links.
       for (final link in document.querySelectorAll('a[href]')) {
-        final href = absoluteUrl(
-          firstUrl,
-          link.attributes['href'] ?? '',
-        );
-        if (href.isEmpty || href == firstUrl) continue;
+        final href = absoluteUrl(baseUrl, link.attributes['href'] ?? '');
+        if (href.isEmpty || href == baseUrl) continue;
+        if (!_looksLikeChapterLink(remoteId, href)) continue;
 
-        final uri = Uri.tryParse(href);
-        if (uri == null || uri.host != Uri.parse(_base).host) continue;
-
-        final parts = uri.pathSegments.where((part) => part.isNotEmpty).toList();
-        if (parts.length < 3 ||
-            parts[0] != 'series' ||
-            parts[1] != remoteId) {
-          continue;
-        }
-
-        final number =
-            firstChapterNumber(link.text) ??
-            (RegExp(r'^(\\d+(?:[.][\\d]+)?)$').firstMatch(parts.last)?.group(1)) ??
-            chapterNumberFromUrl(href);
+        final number = _extractChapterNumber(href, link.text);
         if (number == null || number.isEmpty) continue;
 
         final chapterTitle = cleanText(link.text);
         final parent = link.parent;
         final paid =
-            parent?.classes.any((c) => c.toLowerCase().contains('lock')) ==
-                true;
+            parent?.classes.any((c) => c.toLowerCase().contains('lock')) == true;
 
         all[href] = Chapter(
           mangaKey: '$id::$remoteId',
@@ -146,19 +146,25 @@ class OlympusStaffSource implements MangaSource {
       }
     }
 
-    final firstDocument = await _document(firstUrl);
-    await parsePage(firstDocument, 0);
-
-    final maxPage = _maxPage(firstDocument).clamp(1, 100);
-    for (var page = 2; page <= maxPage; page++) {
-      final pageUrl = '$firstUrl?page=$page';
+    for (final baseUrl in candidates) {
       try {
-        final document = await _document(pageUrl);
-        final before = all.length;
-        await parsePage(document, page);
-        if (all.length == before) break;
+        final firstDocument = await _document(baseUrl);
+        await parsePage(firstDocument, 0, baseUrl);
+
+        final maxPage = _maxPage(firstDocument).clamp(1, 100);
+        for (var page = 2; page <= maxPage; page++) {
+          final pageUrl = '$baseUrl?page=$page';
+          try {
+            final document = await _document(pageUrl);
+            final before = all.length;
+            await parsePage(document, page, baseUrl);
+            if (all.length == before) break;
+          } catch (_) {
+            break;
+          }
+        }
       } catch (_) {
-        break;
+        // Try the next candidate URL pattern.
       }
     }
 
@@ -195,14 +201,35 @@ class OlympusStaffSource implements MangaSource {
 
     final urls = <String>[];
     for (final image in document.querySelectorAll('img')) {
-      final src = imageUrl(chapterRemoteId, image);
-      if (src.isEmpty || src.startsWith('data:')) continue;
+      final candidates = <String>[
+        image.attributes['src'] ?? '',
+        image.attributes['data-src'] ?? '',
+        image.attributes['data-lazy-src'] ?? '',
+        image.attributes['srcset'] ?? '',
+      ];
 
-      final uri = Uri.tryParse(src);
-      if (uri == null || uri.host != Uri.parse(_base).host) continue;
-      if (!uri.path.contains('/uploads/')) continue;
+      String? picked;
+      for (final candidate in candidates) {
+        final cleaned = candidate.trim();
+        if (cleaned.isEmpty || cleaned.startsWith('data:')) continue;
+        final resolved = absoluteUrl(chapterRemoteId, cleaned);
+        if (resolved.isEmpty) continue;
+        final uri = Uri.tryParse(resolved);
+        if (uri == null) continue;
+        final path = uri.path.toLowerCase();
+        final looksLikeImage = path.endsWith('.jpg') ||
+            path.endsWith('.jpeg') ||
+            path.endsWith('.png') ||
+            path.endsWith('.webp') ||
+            path.endsWith('.gif');
+        if (looksLikeImage || path.contains('/uploads/')) {
+          picked = resolved;
+          break;
+        }
+      }
 
-      if (!urls.contains(src)) urls.add(src);
+      if (picked == null || picked.isEmpty) continue;
+      if (!urls.contains(picked)) urls.add(picked);
     }
 
     if (urls.isEmpty) {
@@ -240,7 +267,6 @@ class OlympusStaffSource implements MangaSource {
     final results = <Manga>[];
     final seen = <String>{};
 
-    // The site has changed card classes over time. Manga links remain stable.
     for (final link in document.querySelectorAll('a[href]')) {
       final href = absoluteUrl(_base, link.attributes['href'] ?? '');
       if (href.isEmpty) continue;
@@ -250,10 +276,13 @@ class OlympusStaffSource implements MangaSource {
 
       final parts = uri.pathSegments.where((part) => part.isNotEmpty).toList();
       final index = parts.indexOf('series');
-      if (index < 0 || index + 1 >= parts.length) continue;
+      final mangaIndex = parts.indexOf('manga');
+      final slugIndex = index >= 0 ? index + 1 : (mangaIndex >= 0 ? mangaIndex + 1 : -1);
+      if (slugIndex < 0 || slugIndex >= parts.length) continue;
 
-      final slug = parts[index + 1];
+      final slug = parts[slugIndex];
       if (slug.isEmpty || !seen.add(slug)) continue;
+      if (_looksLikeChapterSlug(slug)) continue;
 
       final title = cleanText(
         link.text.isNotEmpty
@@ -283,22 +312,38 @@ class OlympusStaffSource implements MangaSource {
     while (slug.startsWith('-')) slug = slug.substring(1);
     while (slug.endsWith('-')) slug = slug.substring(0, slug.length - 1);
     if (slug.isEmpty) return null;
-    try {
-      final document = await _document('$_base/series/$slug');
-      final title = cleanText(
-        document.querySelector('h1, .author-info-title h6, .title')?.text ?? '',
-      );
-      if (title.isEmpty) return null;
-      final cover = imageUrl(
-        _base,
-        document.querySelector(
-          'img[alt="Manga Image"], img.shadow-sm, .text-right img',
-        ),
-      );
-      return Manga(sourceId: id, remoteId: slug, title: title, remoteCoverUrl: cover.isEmpty ? null : cover);
-    } catch (_) {
-      return null;
+
+    final candidates = [
+      '$_base/series/$slug',
+      '$_base/manga/$slug/',
+      '$_base/manga/$slug',
+    ];
+
+    for (final url in candidates) {
+      try {
+        final document = await _document(url);
+        final title = cleanText(
+          document.querySelector('h1, .author-info-title h6, .title')?.text ?? '',
+        );
+        if (title.isEmpty) continue;
+        final cover = imageUrl(
+          _base,
+          document.querySelector(
+            'img[alt="Manga Image"], img.shadow-sm, .text-right img, .summary_image img, .profile-manga img',
+          ),
+        );
+        return Manga(
+          sourceId: id,
+          remoteId: slug,
+          title: title,
+          remoteCoverUrl: cover.isEmpty ? null : cover,
+        );
+      } catch (_) {
+        // Try the next candidate.
+      }
     }
+
+    return null;
   }
 
   String _slugFromUrl(String url) {
@@ -306,8 +351,10 @@ class OlympusStaffSource implements MangaSource {
     if (uri == null) return '';
     final parts = uri.pathSegments.where((part) => part.isNotEmpty).toList();
     final index = parts.indexOf('series');
-    if (index >= 0 && index + 1 < parts.length) return parts[index + 1];
-    return '';
+    final mangaIndex = parts.indexOf('manga');
+    final slugIndex = index >= 0 ? index + 1 : (mangaIndex >= 0 ? mangaIndex + 1 : -1);
+    if (slugIndex >= 0 && slugIndex < parts.length) return parts[slugIndex];
+    return parts.isEmpty ? '' : parts.last;
   }
 
   int _maxPage(dynamic document) {
@@ -333,10 +380,81 @@ class OlympusStaffSource implements MangaSource {
   String _chapterTitle(String text, String number) {
     final cleaned = text
         .replaceFirst(
-          RegExp('^الفصل\\\\s*' + RegExp.escape(number) + '\\\\s*[:.\\\\-]?\\\\s*'),
+          RegExp('^الفصل\\s*' + RegExp.escape(number) + '\\s*[:.\\-]?\\s*'),
           '',
         )
         .trim();
     return cleaned;
+  }
+
+  bool _looksLikeChapterLink(String remoteId, String href) {
+    final uri = Uri.tryParse(href);
+    if (uri == null || uri.host != Uri.parse(_base).host) return false;
+
+    final parts = uri.pathSegments.where((part) => part.isNotEmpty).toList();
+    if (parts.isEmpty) return false;
+
+    final lower = href.toLowerCase();
+    final hasChapterToken = lower.contains('chapter') ||
+        lower.contains('الفصل') ||
+        lower.contains('/chapter-') ||
+        lower.contains('/الفصل-');
+
+    if (hasChapterToken) {
+      final anySeriesMatch = parts.length >= 2 &&
+          parts[0].toLowerCase() == 'series' &&
+          parts[1].toLowerCase() == remoteId.toLowerCase();
+      final anyMangaMatch = parts.length >= 2 &&
+          parts[0].toLowerCase() == 'manga' &&
+          _slugMatches(parts[1], remoteId);
+      return anySeriesMatch || anyMangaMatch;
+    }
+
+    final chapterNum = _extractChapterNumber(href, '');
+    if (chapterNum != null && chapterNum.isNotEmpty) {
+      final seriesMatch = parts.length >= 3 &&
+          parts[0].toLowerCase() == 'series' &&
+          parts[1].toLowerCase() == remoteId.toLowerCase();
+      final mangaMatch = parts.length >= 2 &&
+          parts[0].toLowerCase() == 'manga' &&
+          _slugMatches(parts[1], remoteId);
+      return seriesMatch || mangaMatch;
+    }
+
+    return false;
+  }
+
+  bool _looksLikeChapterSlug(String value) {
+    final lower = value.toLowerCase();
+    return lower.contains('chapter') ||
+        lower.contains('الفصل') ||
+        lower.contains('-ch-') ||
+        lower.contains('-chapter-') ||
+        RegExp(r'^[0-9]+(?:[.][0-9]+)?$').hasMatch(lower);
+  }
+
+  bool _slugMatches(String actual, String remoteId) {
+    final a = actual.toLowerCase();
+    final b = remoteId.toLowerCase();
+    return a == b || a.replaceAll(RegExp(r'[^a-z0-9]+'), '-') == b;
+  }
+
+  String? _extractChapterNumber(String href, String text) {
+    final source = '$href $text'.toLowerCase();
+    final patterns = [
+      RegExp(r'chapter[-_ ]?(\d+(?:[.][\d]+)?)'),
+      RegExp(r'الفصل[-_ ]?(\d+(?:[.][\d]+)?)'),
+      RegExp(r'/([0-9]+(?:[.][\d]+)?)/?$'),
+      RegExp(r'(^|[^\d])(\d+(?:[.][\d]+)?)\s*(?:\)|$)'),
+    ];
+
+    for (final pattern in patterns) {
+      final match = pattern.firstMatch(source);
+      if (match == null) continue;
+      final value = match.group(1) ?? match.group(2);
+      if (value != null && value.isNotEmpty) return value;
+    }
+
+    return null;
   }
 }
