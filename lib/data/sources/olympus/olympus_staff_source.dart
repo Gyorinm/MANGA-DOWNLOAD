@@ -76,9 +76,7 @@ class OlympusStaffSource implements MangaSource {
           _collectChapters(pageDocument, pageUrl, remoteId, language, found, page);
           if (found.length == before) break;
         }
-      } catch (_) {
-        // نجرب نمط الرابط التالي؛ بعض السلاسل تستخدم /series/ وأخرى /manga/.
-      }
+      } catch (_) {}
     }
 
     final sorted = found.values.toList()
@@ -150,22 +148,17 @@ class OlympusStaffSource implements MangaSource {
     if (!hasChapterWord && !hasNumber) return false;
 
     if (parts[0].toLowerCase() == 'series') {
-      // Olympus uses both /series/id/44 and /series/id-الفصل-44.
-      return parts.length >= 3
-          ? parts[1].toLowerCase() == base
-          : _sameMangaSlug(slug, base);
+      return parts.length >= 3 ? parts[1].toLowerCase() == base : _sameMangaSlug(slug, base);
     }
-    if (parts[0].toLowerCase() == 'manga') {
-      return _sameMangaSlug(slug, base);
-    }
+    if (parts[0].toLowerCase() == 'manga') return _sameMangaSlug(slug, base);
     return false;
   }
 
   bool _sameMangaSlug(String actual, String base) {
     return actual == base ||
         actual.startsWith('$base-') ||
-        actual.startsWith('$base_') ||
-        actual.startsWith('$base/');
+        actual.startsWith('${base}_') ||
+        actual.startsWith('${base}/');
   }
 
   String? _chapterNumber(String href, String text) {
