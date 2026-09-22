@@ -2,7 +2,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/http/http_client.dart';
-import 'core/storage/file_storage.dart';
 import 'data/local/app_database.dart';
 import 'data/local/library_dao.dart';
 import 'data/repositories/library_repository.dart';
@@ -17,18 +16,12 @@ import 'domain/entities/manga.dart';
 import 'download/download_manager.dart';
 import 'download/download_models.dart';
 
-/// كل التبعيات تُبنى هنا، مرة واحدة، وتُحقن نزولًا.
-/// أي شاشة تقرأ ما تحتاجه فقط، فيبقى الاختبار ممكنًا باستبدال مزوّد واحد.
-
-// ── البنية التحتية ───────────────────────────────────────────────────────
-
 final httpClientProvider = Provider<HttpClient>((ref) {
   final client = HttpClient();
   ref.onDispose(client.close);
   return client;
 });
 
-/// تُهيّأ مرة عند الإقلاع ويُعاد استخدامها بعد ذلك.
 final fileStorageProvider = Provider<FileStorage>(
   (ref) => throw UnimplementedError('يُحقن في main()'),
 );
@@ -45,10 +38,6 @@ final daoProvider = Provider<LibraryDao>(
   (ref) => LibraryDao(ref.watch(databaseProvider)),
 );
 
-/// جميع المواقع التي يعرف التطبيق كيف يتعامل معها.
-///
-/// المصدر لا يقرر هل سيبحث فيه المستخدم أم لا؛ هذا القرار محفوظ في
-/// [enabledSourcesProvider].
 final sourceRegistryProvider = Provider<SourceRegistry>((ref) {
   final http = ref.watch(httpClientProvider);
   return SourceRegistry([
@@ -59,8 +48,6 @@ final sourceRegistryProvider = Provider<SourceRegistry>((ref) {
   ]);
 });
 
-/// المواقع التي اختار المستخدم البحث والتحميل منها.
-/// مصدر واحد على الأقل يبقى مفعّلًا.
 final enabledSourcesProvider =
     StateNotifierProvider<SourceSettingsNotifier, Set<String>>((ref) {
   final registry = ref.watch(sourceRegistryProvider);
@@ -92,9 +79,6 @@ final downloadManagerProvider = Provider<DownloadManager>((ref) {
   return manager;
 });
 
-// ── حالة الواجهة ─────────────────────────────────────────────────────────
-
-/// نبضة تتغيّر كلما تغيّرت المكتبة، تعتمد عليها الشاشات لإعادة الجلب.
 final libraryRevisionProvider = StreamProvider<void>((ref) {
   return ref.watch(libraryRepositoryProvider).changes;
 });
@@ -109,11 +93,16 @@ final searchQueryProvider = StateProvider<String>((_) => '');
 final searchResultsProvider =
     FutureProvider.family<List<SourceResults>, String>((ref, query) {
   if (query.trim().length < 2) return Future.value(const []);
-  // مراقبة اختيار المستخدم تعيد البحث تلقائيًا عند إضافة موقع أو إزالته.
   final enabled = ref.watch(enabledSourcesProvider);
-  return ref
-      .watch(libraryRepositoryProvider)
-      .searchAll(query.trim(), sourceIds: enabled);
+  return ref.watch(libraryRepositoryProvider).searchAll(
+        query.trim(),
+        sourceIds: enabled,
+      );
+});
+
+/// يجلب بيانات المانهوا الكاملة، لا يكتفي بنتيجة البحث المختصرة.
+final mangaDetailsProvider = FutureProvider.family<Manga, Manga>((ref, manga) {
+  return ref.watch(libraryRepositoryProvider).mangaDetails(manga);
 });
 
 final mangaChaptersProvider =
@@ -128,7 +117,6 @@ final localChaptersProvider =
   return ref.watch(libraryRepositoryProvider).localChapters(mangaKey);
 });
 
-/// بثّ حيّ لتقدّم التحميلات، مع لقطة أولية حتى لا تبدأ الشاشة فارغة.
 final downloadsProvider = StreamProvider<List<DownloadProgress>>((ref) async* {
   final manager = ref.watch(downloadManagerProvider);
   yield manager.snapshot;
