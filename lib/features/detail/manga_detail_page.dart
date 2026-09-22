@@ -16,69 +16,66 @@ class MangaDetailPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final chapters = ref.watch(mangaChaptersProvider(manga));
-
+    final details = ref.watch(mangaDetailsProvider(manga));
     return Scaffold(
       appBar: AppBar(title: Text(manga.title, maxLines: 1)),
-      body: chapters.when(
+      body: details.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => ErrorNotice(
-          message: 'تعذّر جلب الفصول من المصدر.',
-          onRetry: () => ref.invalidate(mangaChaptersProvider(manga)),
+          message: 'تعذّر جلب معلومات المانهوا من المصدر.',
+          onRetry: () => ref.invalidate(mangaDetailsProvider(manga)),
         ),
-        data: (list) => _Body(manga: manga, chapters: list),
+        data: (fullManga) => _Body(manga: fullManga),
       ),
     );
   }
 }
 
 class _Body extends ConsumerWidget {
-  const _Body({required this.manga, required this.chapters});
+  const _Body({required this.manga});
+
+  final Manga manga;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final chapters = ref.watch(mangaChaptersProvider(manga));
+    return chapters.when(
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => ErrorNotice(
+        message: 'تعذّر جلب الفصول من المصدر.',
+        onRetry: () => ref.invalidate(mangaChaptersProvider(manga)),
+      ),
+      data: (list) => _Content(manga: manga, chapters: list),
+    );
+  }
+}
+
+class _Content extends ConsumerWidget {
+  const _Content({required this.manga, required this.chapters});
 
   final Manga manga;
   final List<Chapter> chapters;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final remaining = chapters
-        .where((c) => c.status != ChapterStatus.downloaded)
-        .length;
-
+    final remaining = chapters.where((c) => c.status != ChapterStatus.downloaded).length;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(
-              width: 130,
-              child: CoverImage(
-                localPath: manga.localCoverPath,
-                remoteUrl: manga.remoteCoverUrl,
-                sourceId: manga.sourceId,
-                title: manga.title,
-              ),
-            ),
+            SizedBox(width: 130, child: CoverImage(localPath: manga.localCoverPath, remoteUrl: manga.remoteCoverUrl, sourceId: manga.sourceId, title: manga.title)),
             const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(manga.title,
-                      style: Theme.of(context).textTheme.titleLarge),
+                  Text(manga.title, style: Theme.of(context).textTheme.titleLarge),
                   const SizedBox(height: 8),
-                  _MetaLine(
-                    label: 'المصدر',
-                    value: ref
-                            .watch(sourceRegistryProvider)
-                            .byId(manga.sourceId)
-                            ?.displayName ??
-                        manga.sourceId,
-                  ),
-                  if (manga.author.isNotEmpty)
-                    _MetaLine(label: 'المؤلف', value: manga.author),
-                  if (manga.status.isNotEmpty)
-                    _MetaLine(label: 'الحالة', value: manga.status),
+                  _MetaLine(label: 'المصدر', value: ref.watch(sourceRegistryProvider).byId(manga.sourceId)?.displayName ?? manga.sourceId),
+                  if (manga.author.isNotEmpty) _MetaLine(label: 'المؤلف', value: manga.author),
+                  if (manga.status.isNotEmpty) _MetaLine(label: 'الحالة', value: manga.status),
                   _MetaLine(label: 'الفصول', value: '${chapters.length}'),
                 ],
               ),
@@ -87,39 +84,20 @@ class _Body extends ConsumerWidget {
         ),
         const SizedBox(height: 20),
         FilledButton(
-          onPressed: chapters.isEmpty || remaining == 0
-              ? null
-              : () => _startDownload(context, ref),
-          child: Text(
-            remaining == 0 && chapters.isNotEmpty
-                ? 'كل الفصول محمّلة'
-                : 'حمّل المانهوا كاملة ($remaining فصلًا)',
-          ),
+          onPressed: chapters.isEmpty || remaining == 0 ? null : () => _startDownload(context, ref),
+          child: Text(remaining == 0 && chapters.isNotEmpty ? 'كل الفصول محمّلة' : 'حمّل المانهوا كاملة ($remaining فصلًا)'),
         ),
         const SizedBox(height: 10),
         OutlinedButton(
-          onPressed: chapters.isEmpty
-              ? null
-              : () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => ChaptersPage(manga: manga),
-                    ),
-                  ),
-          style: OutlinedButton.styleFrom(
-            minimumSize: const Size.fromHeight(48),
-            foregroundColor: AppTheme.textPrimary,
-            side: const BorderSide(color: AppTheme.line),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
+          onPressed: chapters.isEmpty ? null : () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChaptersPage(manga: manga))),
+          style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(48), foregroundColor: AppTheme.textPrimary, side: const BorderSide(color: AppTheme.line), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
           child: const Text('اختيار فصول محدّدة'),
         ),
         if (manga.description.isNotEmpty) ...[
           const SizedBox(height: 24),
           Text('القصة', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
-          Text(manga.description,
-              style: Theme.of(context).textTheme.bodyMedium),
+          Text(manga.description, style: Theme.of(context).textTheme.bodyMedium),
         ],
       ],
     );
@@ -127,30 +105,19 @@ class _Body extends ConsumerWidget {
 
   Future<void> _startDownload(BuildContext context, WidgetRef ref) async {
     final messenger = ScaffoldMessenger.of(context);
-    await ref.read(downloadManagerProvider).enqueueManga(
-          manga: manga,
-          chapters: chapters,
-        );
-    messenger.showSnackBar(
-      const SnackBar(content: Text('أُضيفت إلى المكتبة وبدأ التحميل')),
-    );
+    await ref.read(downloadManagerProvider).enqueueManga(manga: manga, chapters: chapters);
+    messenger.showSnackBar(const SnackBar(content: Text('أُضيفت إلى المكتبة وبدأ التحميل')));
   }
 }
 
 class _MetaLine extends StatelessWidget {
   const _MetaLine({required this.label, required this.value});
-
   final String label;
   final String value;
 
   @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Text(
-        '$label: $value',
-        style: const TextStyle(color: AppTheme.textMuted, fontSize: 13),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Text('$label: $value', style: const TextStyle(color: AppTheme.textMuted, fontSize: 13)),
+      );
 }
