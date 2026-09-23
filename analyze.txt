@@ -1,0 +1,12 @@
+Analyzing MANGA-DOWNLOAD...                                     
+
+warning • Returning a 'Future' without 'await' inside a try block. Try adding an 'await' • lib/data/repositories/library_repository.dart:70:9 • unawaited_return_in_try_block
+   info • Unnecessary braces in a string interpolation. Try removing the braces • lib/data/sources/olympus/olympus_staff_source.dart:389:26 • unnecessary_brace_in_string_interps
+   info • Use interpolation to compose strings and values. Try using string interpolation to build the composite string • lib/data/sources/olympus/olympus_staff_source.dart:453:18 • prefer_interpolation_to_compose_strings
+warning • Dead code. Try removing the code, or fixing the code before it so that it can be reached • lib/data/sources/starz/starz_manga_source.dart:57:5 • dead_code
+   info • Statements in a while should be enclosed in a block. Try wrapping the statement in a block • lib/data/sources/starz/starz_manga_source.dart:261:34 • curly_braces_in_flow_control_structures
+   info • Statements in a while should be enclosed in a block. Try wrapping the statement in a block • lib/data/sources/starz/starz_manga_source.dart:262:32 • curly_braces_in_flow_control_structures
+   info • Use interpolation to compose strings and values. Try using string interpolation to build the composite string • lib/data/sources/starz/starz_manga_source.dart:301:18 • prefer_interpolation_to_compose_strings
+   info • Use interpolation to compose strings and values. Try using string interpolation to build the composite string • lib/data/sources/starz/starz_manga_source.dart:308:20 • prefer_interpolation_to_compose_strings
+
+8 issues found. (ran in 11.3s)

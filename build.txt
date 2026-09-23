@@ -1,0 +1,12 @@
+Running Gradle task 'assembleRelease'...                        
+Font asset "MaterialIcons-Regular.otf" was tree-shaken, reducing it from 1645184 to 3316 bytes (99.8% reduction). Tree-shaking can be disabled by providing the --no-tree-shake-icons flag when building your app.
+Checking the license for package CMake 3.22.1 in /usr/local/lib/android/sdk/licenses
+License for package CMake 3.22.1 accepted.
+Preparing "Install CMake 3.22.1 v.3.22.1".
+"Install CMake 3.22.1 v.3.22.1" ready.
+Installing CMake 3.22.1 in /usr/local/lib/android/sdk/cmake/3.22.1
+"Install CMake 3.22.1 v.3.22.1" complete.
+"Install CMake 3.22.1 v.3.22.1" finished.
+Caught exception: Already watching path: /home/runner/work/MANGA-DOWNLOAD/MANGA-DOWNLOAD/android
+Running Gradle task 'assembleRelease'...                          269.2s
+✓ Built build/app/outputs/flutter-apk/app-release.apk (57.1MB)
