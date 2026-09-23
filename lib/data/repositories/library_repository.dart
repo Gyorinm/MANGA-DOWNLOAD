@@ -7,8 +7,6 @@ import '../local/library_dao.dart';
 import '../sources/source_registry.dart';
 
 /// الواجهة الوحيدة التي تتعامل معها الشاشات.
-///
-/// تُخفي عن الواجهة من أين جاءت البيانات: من الشبكة أم من القرص.
 class LibraryRepository {
   LibraryRepository({
     required LibraryDao dao,
@@ -21,20 +19,16 @@ class LibraryRepository {
   final LibraryDao _dao;
   final SourceRegistry _registry;
   final FileStorage _storage;
-
   final _libraryChanges = StreamController<void>.broadcast();
 
-  /// إشارة «تغيّرت المكتبة» تستمع إليها الشاشات لتعيد الجلب.
   Stream<void> get changes => _libraryChanges.stream;
 
   void notifyChanged() {
     if (!_libraryChanges.isClosed) _libraryChanges.add(null);
   }
 
-  // ── بحث عبر كل المصادر ────────────────────────────────────────────────
-
-  /// يبحث في المصادر المختارة بالتوازي ([sourceIds]، وnull تعني الكل).
-  /// فشل مصدر لا يُسقط البقية.
+  /// يبحث في كل المصادر المحددة ولا يخفي المصادر التي فشل طلبها.
+  /// هذا يجعل المصدر ظاهرًا في الشاشة مع رسالة الخطأ بدل اختفائه بصمت.
   Future<List<SourceResults>> searchAll(String query,
       {Set<String>? sourceIds}) async {
     final selected = _registry.all
@@ -46,44 +40,34 @@ class LibraryRepository {
           sourceId: source.id,
           sourceName: source.displayName,
           items: results,
+          error: results.isEmpty ? 'لم يعثر هذا المصدر على نتائج.' : null,
         );
       } catch (e) {
         return SourceResults(
           sourceId: source.id,
           sourceName: source.displayName,
           items: const [],
-          error: 'تعذّر البحث في هذا المصدر.',
+          error: 'تعذّر البحث في هذا المصدر: ${e.toString()}',
         );
       }
     });
-
-    final all = await Future.wait(futures);
-    // نُظهر المصدر فقط إذا وُجدت نتائج؛ الأخطاء والقوائم الفارغة تُخفى.
-    return all.where((r) => r.items.isNotEmpty).toList();
+    return Future.wait(futures);
   }
-
-  // ── التفاصيل والفصول ──────────────────────────────────────────────────
 
   Future<Manga> mangaDetails(Manga stub) async {
     final local = await _dao.findManga(stub.key);
     if (local != null) return local;
-
-    final source = _registry.require(stub.sourceId);
-    final fresh = await source.details(stub.remoteId);
-    return fresh;
+    return _registry.require(stub.sourceId).details(stub.remoteId);
   }
 
-  /// يجلب الفصول من الشبكة عند الإمكان، ويسقط إلى النسخة المحلية عند تعذّرها.
   Future<List<Chapter>> chapters(Manga manga, {bool refresh = false}) async {
     final cached = await _dao.chaptersOf(manga.key);
     if (!refresh && cached.isNotEmpty) return cached;
-
     try {
-      final source = _registry.require(manga.sourceId);
-      final fresh = await source.chapters(manga.remoteId);
+      final fresh = await _registry.require(manga.sourceId).chapters(manga.remoteId);
       if (await _dao.findManga(manga.key) != null) {
         await _dao.mergeChapters(manga.key, fresh);
-        return await _dao.chaptersOf(manga.key);
+        return _dao.chaptersOf(manga.key);
       }
       return fresh;
     } catch (_) {
@@ -92,16 +76,10 @@ class LibraryRepository {
     }
   }
 
-  Future<List<Chapter>> localChapters(String mangaKey) =>
-      _dao.chaptersOf(mangaKey);
-
-  // ── المكتبة المحلية ───────────────────────────────────────────────────
-
+  Future<List<Chapter>> localChapters(String mangaKey) => _dao.chaptersOf(mangaKey);
   Future<List<Manga>> library() => _dao.libraryManga();
-
   Future<Manga?> findLocal(String mangaKey) => _dao.findManga(mangaKey);
 
-  /// يُضيف المانهوا إلى المكتبة مع فصولها. يُستدعى قبل بدء التحميل.
   Future<Manga> addToLibrary(Manga manga, List<Chapter> chapters) async {
     final entry = manga.copyWith(
       totalChapters: chapters.length,
@@ -121,7 +99,6 @@ class LibraryRepository {
   Future<void> saveReadingPosition(String chapterKey, int page) =>
       _dao.saveReadingPosition(chapterKey, page);
 
-  /// حذف كامل: السجلات والملفات معًا، فلا تبقى بيانات يتيمة.
   Future<void> removeManga(String mangaKey) async {
     await _dao.deleteManga(mangaKey);
     await _storage.deleteManga(mangaKey);
@@ -148,7 +125,6 @@ class LibraryRepository {
   void dispose() => _libraryChanges.close();
 }
 
-/// نتائج مصدر واحد داخل شاشة البحث.
 class SourceResults {
   const SourceResults({
     required this.sourceId,
